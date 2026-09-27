@@ -9,10 +9,8 @@ publish = false
 
 [dependencies]
 aurea = { git = "https://github.com/SkuldNorniern/aurea" }
-lykil = { path = "../lykil" }
-lykil-config = { path = "../lykil/lykil-config" }
 lykil-device = { path = "../lykil/lykil-device" }
-lykil-protocol = { path = "../lykil/lykil-protocol" }
+lykil-protocol = { path = "../lykil/lykil-protocol", features = ["std"] }
 
 [lints.rust]
 unsafe_code = "forbid"

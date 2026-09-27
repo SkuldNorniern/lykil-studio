@@ -2,8 +2,7 @@
 
 use aurea::AureaResult;
 use aurea::render::{Color, DrawingContext, Font, Paint, PaintStyle, Point, Rect};
-use lykil_config::FirmwareIr;
-use lykil_config::ir::Diode;
+use lykil_protocol::describe::Description;
 use lykil_protocol::lcp::{self, Diagnostics};
 
 use crate::device::{Connection, State};
@@ -21,152 +20,103 @@ const KEY_DOWN: Color = Color::rgb(90, 170, 255);
 const GOOD: Color = Color::rgb(110, 200, 130);
 const BAD: Color = Color::rgb(235, 110, 100);
 
-/// One key to draw: where, and which matrix cell reads it.
-struct Key {
-    rect: Rect,
-    label: String,
-    cell: Option<(usize, usize)>,
+/// Draws whatever the connected keyboard describes; nothing is known
+/// about any keyboard in advance.
+pub fn draw(ctx: &mut dyn DrawingContext, state: &State) -> AureaResult<()> {
+    ctx.clear(Color::rgb(18, 20, 24))?;
+    let title = Font::new("", 22.0);
+    let body = Font::new("", 14.0);
+    let (heading, color) = match &state.connection {
+        Connection::Searching => ("looking for a Lykil keyboard...".to_string(), DIM),
+        Connection::Connected => (state.name.clone(), TEXT),
+        Connection::Lost(why) => (format!("connection lost: {why}"), BAD),
+    };
+    ctx.draw_text_with_font(&heading, Point::new(MARGIN, 40.0), &title, &fill(color))?;
+    if let Some(h) = state.hello {
+        let line = format!(
+            "{} layers, {} keys, {} x {} matrix, LCP {}",
+            h.layers, h.keys, h.matrix_rows, h.matrix_cols, h.version
+        );
+        ctx.draw_text_with_font(&line, Point::new(MARGIN, 66.0), &body, &fill(DIM))?;
+    }
+    if let Some(d) = &state.diagnostics {
+        draw_diagnostics(ctx, d, &body)?;
+    }
+    match &state.description {
+        Some(d) if d.keys.iter().any(|k| k.geometry.is_some()) => draw_keys(ctx, state, d),
+        Some(d) => draw_grid(ctx, state, d, &body),
+        None => Ok(()),
+    }
 }
 
-pub struct View {
-    keys: Vec<Key>,
-    /// Driven lines are columns (row-to-col diodes) or rows.
-    columns_driven: bool,
+/// Is matrix cell `(row, col)` closed in the raw lines?
+fn closed(d: &Description, matrix: &[u32], (row, col): (u8, u8)) -> bool {
+    let (line, bit) = if d.columns_driven {
+        (col, row)
+    } else {
+        (row, col)
+    };
+    matrix
+        .get(usize::from(line))
+        .is_some_and(|bits| bit < 32 && bits >> bit & 1 == 1)
 }
 
-impl View {
-    pub fn new(project: Option<FirmwareIr>) -> Self {
-        let Some(ir) = project else {
-            return Self {
-                keys: Vec::new(),
-                columns_driven: true,
-            };
+fn draw_keys(ctx: &mut dyn DrawingContext, state: &State, desc: &Description) -> AureaResult<()> {
+    let label = Font::new("", 11.0);
+    for key in &desc.keys {
+        let Some([left, top, width, height]) = key.geometry else {
+            continue;
         };
-        let matrix = ir.board.as_ref().and_then(|b| b.matrix.as_ref());
-        let mut cells = vec![None; ir.layout.keys.len()];
-        if let Some(m) = matrix {
-            for (row, cols) in m.positions.iter().enumerate() {
-                for (col, position) in cols.iter().enumerate() {
-                    if let Some(p) = position {
-                        cells[*p] = Some((row, col));
-                    }
-                }
-            }
-        }
-        let keys = ir
-            .layout
-            .keys
-            .iter()
-            .zip(cells)
-            .filter_map(|(key, cell)| {
-                let g = key.geometry;
-                let (x, y) = (g.x?, g.y?);
-                #[allow(clippy::cast_possible_truncation)]
-                let rect = Rect::new(
-                    MARGIN + x as f32 * UNIT,
-                    KEYBOARD_TOP + y as f32 * UNIT,
-                    g.w.unwrap_or(1.0) as f32 * UNIT - GAP,
-                    g.h.unwrap_or(1.0) as f32 * UNIT - GAP,
-                );
-                Some(Key {
-                    rect,
-                    label: short(&key.id),
-                    cell,
-                })
-            })
-            .collect();
-        Self {
-            keys,
-            columns_driven: matrix.is_none_or(|m| m.diode == Diode::RowToCol),
-        }
-    }
-
-    pub fn draw(&self, ctx: &mut dyn DrawingContext, state: &State) -> AureaResult<()> {
-        ctx.clear(Color::rgb(18, 20, 24))?;
-        let title = Font::new("", 22.0);
-        let body = Font::new("", 14.0);
-        let (heading, color) = match &state.connection {
-            Connection::Searching => ("looking for a Lykil keyboard...".to_string(), DIM),
-            Connection::Connected => (state.name.clone(), TEXT),
-            Connection::Lost(why) => (format!("connection lost: {why}"), BAD),
-        };
-        ctx.draw_text_with_font(&heading, Point::new(MARGIN, 40.0), &title, &fill(color))?;
-        if let Some(h) = state.hello {
-            let line = format!(
-                "{} layers, {} keys, {} x {} matrix, LCP {}",
-                h.layers, h.keys, h.matrix_rows, h.matrix_cols, h.version
-            );
-            ctx.draw_text_with_font(&line, Point::new(MARGIN, 66.0), &body, &fill(DIM))?;
-        }
-        if let Some(d) = &state.diagnostics {
-            draw_diagnostics(ctx, d, &body)?;
-        }
-        if self.keys.is_empty() {
-            self.draw_grid(ctx, state, &body)
-        } else {
-            self.draw_keys(ctx, state)
-        }
-    }
-
-    fn closed(&self, matrix: &[u32], (row, col): (usize, usize)) -> bool {
-        let (line, bit) = if self.columns_driven {
-            (col, row)
-        } else {
-            (row, col)
-        };
-        matrix
-            .get(line)
-            .is_some_and(|bits| bit < 32 && bits >> bit & 1 == 1)
-    }
-
-    fn draw_keys(&self, ctx: &mut dyn DrawingContext, state: &State) -> AureaResult<()> {
-        let label = Font::new("", 11.0);
-        for key in &self.keys {
-            let down = key.cell.is_some_and(|c| self.closed(&state.matrix, c));
-            ctx.draw_rect(key.rect, &fill(if down { KEY_DOWN } else { KEY }))?;
-            let text = if down { Color::rgb(10, 20, 30) } else { DIM };
-            ctx.draw_text_with_font(
-                &key.label,
-                Point::new(key.rect.x + 5.0, key.rect.y + 16.0),
-                &label,
-                &fill(text),
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Without a project: every matrix cell as a small square.
-    fn draw_grid(
-        &self,
-        ctx: &mut dyn DrawingContext,
-        state: &State,
-        font: &Font,
-    ) -> AureaResult<()> {
-        let Some(h) = state.hello else {
-            return Ok(());
-        };
+        #[allow(clippy::cast_possible_truncation)]
+        let rect = Rect::new(
+            MARGIN + left as f32 * UNIT,
+            KEYBOARD_TOP + top as f32 * UNIT,
+            width as f32 * UNIT - GAP,
+            height as f32 * UNIT - GAP,
+        );
+        let down = key.cell.is_some_and(|c| closed(desc, &state.matrix, c));
+        ctx.draw_rect(rect, &fill(if down { KEY_DOWN } else { KEY }))?;
+        let text = if down { Color::rgb(10, 20, 30) } else { DIM };
         ctx.draw_text_with_font(
-            "raw matrix (pass the project directory to see the layout)",
-            Point::new(MARGIN, KEYBOARD_TOP - 12.0),
-            font,
-            &fill(DIM),
+            &short(&key.id),
+            Point::new(rect.x + 5.0, rect.y + 16.0),
+            &label,
+            &fill(text),
         )?;
-        let size = 26.0;
-        for row in 0..usize::from(h.matrix_rows) {
-            for col in 0..usize::from(h.matrix_cols) {
-                let down = self.closed(&state.matrix, (row, col));
-                #[allow(clippy::cast_precision_loss)]
-                let rect = Rect::new(
-                    MARGIN + col as f32 * (size + GAP),
-                    KEYBOARD_TOP + row as f32 * (size + GAP),
-                    size,
-                    size,
-                );
-                ctx.draw_rect(rect, &fill(if down { KEY_DOWN } else { KEY }))?;
-            }
-        }
-        Ok(())
     }
+    Ok(())
+}
+
+/// A keyboard without geometry: every matrix cell as a small square.
+fn draw_grid(
+    ctx: &mut dyn DrawingContext,
+    state: &State,
+    d: &Description,
+    font: &Font,
+) -> AureaResult<()> {
+    let Some(h) = state.hello else {
+        return Ok(());
+    };
+    ctx.draw_text_with_font(
+        "raw matrix (the keyboard describes no key positions)",
+        Point::new(MARGIN, KEYBOARD_TOP - 12.0),
+        font,
+        &fill(DIM),
+    )?;
+    let size = 26.0;
+    for row in 0..h.matrix_rows {
+        for col in 0..h.matrix_cols {
+            let down = closed(d, &state.matrix, (row, col));
+            let rect = Rect::new(
+                MARGIN + f32::from(col) * (size + GAP),
+                KEYBOARD_TOP + f32::from(row) * (size + GAP),
+                size,
+                size,
+            );
+            ctx.draw_rect(rect, &fill(if down { KEY_DOWN } else { KEY }))?;
+        }
+    }
+    Ok(())
 }
 
 fn draw_diagnostics(ctx: &mut dyn DrawingContext, d: &Diagnostics, font: &Font) -> AureaResult<()> {

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use aurea::render::{CanvasId, request_canvas_redraw};
 use lykil_device::Device;
+use lykil_protocol::describe::Description;
 use lykil_protocol::lcp::{Diagnostics, Hello};
 
 /// How often the matrix is read while connected.
@@ -19,6 +20,8 @@ pub struct State {
     pub connection: Connection,
     pub name: String,
     pub hello: Option<Hello>,
+    /// What the keyboard says about itself: keys, layers, geometry.
+    pub description: Option<Description>,
     pub diagnostics: Option<Diagnostics>,
     /// Raw matrix of the last scan, per driven line.
     pub matrix: Vec<u32>,
@@ -62,10 +65,15 @@ pub fn spawn(state: Arc<Mutex<State>>, canvas: CanvasId) {
 fn poll(mut device: Device, state: &Arc<Mutex<State>>, canvas: CanvasId) -> String {
     let hello = *device.hello();
     let name = device.name().to_string();
+    let description = match device.describe() {
+        Ok(d) => d,
+        Err(e) => return e.to_string(),
+    };
     update(state, canvas, |s| {
         s.connection = Connection::Connected;
         s.name.clone_from(&name);
         s.hello = Some(hello);
+        s.description = Some(description);
     });
     let mut next_diagnostics = Instant::now();
     loop {
