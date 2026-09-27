@@ -1,0 +1,21 @@
+[package]
+name = "lykil-studio"
+description = "Lykil Studio: manage Lykil keyboards"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+aurea = { git = "https://github.com/SkuldNorniern/aurea" }
+lykil = { path = "../lykil" }
+lykil-config = { path = "../lykil/lykil-config" }
+lykil-device = { path = "../lykil/lykil-device" }
+lykil-protocol = { path = "../lykil/lykil-protocol" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
