@@ -91,6 +91,26 @@ fn short(name: &str) -> String {
     s
 }
 
+/// Keycap text of a lighting key.
+const fn light(k: lykil::lighting::LightingKey) -> &'static str {
+    use lykil::lighting::LightingKey as L;
+    match k {
+        L::On => "On",
+        L::Off => "Off",
+        L::Toggle => "On/Off",
+        L::NextEffect => "Effect+",
+        L::PreviousEffect => "Effect-",
+        L::HueUp => "Hue+",
+        L::HueDown => "Hue-",
+        L::SaturationUp => "Sat+",
+        L::SaturationDown => "Sat-",
+        L::BrightnessUp => "Bri+",
+        L::BrightnessDown => "Bri-",
+        L::SpeedUp => "Speed+",
+        L::SpeedDown => "Speed-",
+    }
+}
+
 fn key(k: KeyCode) -> String {
     names::key_name(k).map_or_else(|| format!("0x{:02X}", k.0), short)
 }
@@ -144,6 +164,7 @@ pub fn keycap(b: Binding, layers: &[String]) -> (String, Option<String>) {
         Binding::OneShot(OneShotTarget::Modifiers(m)) => (mods(m), Some("one-shot".into())),
         Binding::OneShot(OneShotTarget::Layer(l)) => (layer(l, layers), Some("one-shot".into())),
         Binding::Macro(id) => (format!("M{}", id.0), Some("macro".into())),
+        Binding::Lighting(k) => (light(k).into(), Some("light".into())),
         Binding::OneShotSwitch(s) => (
             match s {
                 Switch::On => "OS on",
@@ -236,6 +257,13 @@ pub fn palette(layers: &[String], macros: bool) -> Vec<Group> {
                 .iter()
                 .map(|(_, m)| Binding::OneShot(OneShotTarget::Modifiers(*m)))
                 .chain((0..n).map(|l| Binding::OneShot(OneShotTarget::Layer(LayerId(l)))))
+                .collect(),
+        },
+        Group {
+            name: "Lighting",
+            items: lykil::lighting::LightingKey::ALL
+                .into_iter()
+                .map(Binding::Lighting)
                 .collect(),
         },
         Group {
