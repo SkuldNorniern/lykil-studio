@@ -154,10 +154,16 @@ impl Presses {
         self.recent.push_back((key, time));
     }
 
-    /// Records the keys that went down since the last call.
+    /// Records the keys that went down since the last call; held keys
+    /// stay lit, as on the keyboard.
     pub fn follow(&mut self, down: &[bool], time: f32) {
         for (key, &d) in down.iter().enumerate() {
-            if d && !self.down.get(key).copied().unwrap_or(false) {
+            if !d {
+                continue;
+            }
+            if self.down.get(key).copied().unwrap_or(false) {
+                self.at[key] = Some(time);
+            } else {
                 self.press(key, time);
             }
         }
@@ -863,10 +869,11 @@ mod tests {
         let mut p = Presses::default();
         p.follow(&[false, true], 1.0);
         p.follow(&[false, true], 2.0);
-        assert_eq!(p.at, vec![None, Some(1.0)]);
+        assert_eq!(p.at, vec![None, Some(2.0)]);
         p.follow(&[true, false], 3.0);
         p.follow(&[true, true], 4.0);
-        assert_eq!(p.at, vec![Some(3.0), Some(4.0)]);
+        assert_eq!(p.at, vec![Some(4.0), Some(4.0)]);
+        assert_eq!(p.recent.len(), 3);
         for i in 0..20 {
             p.press(0, f32::from(u8::try_from(i).unwrap()));
         }

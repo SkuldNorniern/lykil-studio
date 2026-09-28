@@ -725,7 +725,13 @@ fn slider(
     const STEPS: u8 = 24;
     let lang = pen.lang;
     view::label(pen, lang.tr(name), area.x, area.y)?;
-    let pct = format!("{}%", u32::from(value) * 100 / 255);
+    // For the press effects, speed is how long a press shows.
+    let pct =
+        if which == Slider::Speed && matches!(settings.effect, Effect::Reactive | Effect::Ripple) {
+            format!("{:.1} s", f64::from(press_life(value).0) / 1000.0)
+        } else {
+            format!("{}%", u32::from(value) * 100 / 255)
+        };
     let font = pen.font(11.0);
     let vw = pen.width(&pct, &font);
     pen.text(&pct, area.right() - vw, area.y, &font, color::DIM)?;
