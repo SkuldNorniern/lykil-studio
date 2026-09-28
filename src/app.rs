@@ -11,7 +11,7 @@ use std::sync::mpsc::Sender;
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
 use lykil::keycode::Modifiers;
-use lykil::lighting::{Effect, Hsv, RIPPLES, Rgb, Settings};
+use lykil::lighting::{Effect, Hsv, Palette, RIPPLES, Rgb, Settings};
 
 use crate::anim::{Anim, Key};
 use crate::colour;
@@ -52,6 +52,8 @@ impl Tab {
 pub enum Slider {
     Brightness,
     Speed,
+    Background,
+    Size,
 }
 
 /// A text field of the colour picker.
@@ -129,6 +131,10 @@ pub enum Hit {
     Field(Field),
     /// A ready-made or recent colour.
     Swatch(Rgb),
+    Colours(Palette),
+    /// Which colour the picker edits: the second when true.
+    Second(bool),
+    LayerKeys(bool),
 }
 
 /// Recent key presses, for the reactive and ripple previews.
@@ -140,7 +146,12 @@ pub struct Presses {
     pub at: Vec<Option<f32>>,
     /// The latest presses, oldest first.
     pub recent: VecDeque<(usize, f32)>,
+    /// Heatmap warmth per key, `0..=1`, and when it was last set.
+    heat: Vec<(f32, f32)>,
 }
+
+/// Heat one press adds, as the firmware's 12000 of 65535.
+const HEAT_PER_PRESS: f32 = 12_000.0 / 65_535.0;
 
 impl Presses {
     pub fn press(&mut self, key: usize, time: f32) {
@@ -148,10 +159,25 @@ impl Presses {
             self.at.resize(key + 1, None);
         }
         self.at[key] = Some(time);
+        if self.heat.len() <= key {
+            self.heat.resize(key + 1, (0.0, time));
+        }
+        // Speed only sets how fast heat goes; for adding, any will do.
+        let warm = self.heat_at(key, time, 128);
+        self.heat[key] = ((warm + HEAT_PER_PRESS).min(1.0), time);
         if self.recent.len() == RIPPLES {
             self.recent.pop_front();
         }
         self.recent.push_back((key, time));
+    }
+
+    /// Key `key`'s heat at `time`, cooling as the firmware does: about 4 s
+    /// from hot to cold at speed 128.
+    pub fn heat_at(&self, key: usize, time: f32, speed: u8) -> f32 {
+        let per_second = (f32::from(speed) + 16.0) / 9.0 * 1000.0 / 65_535.0;
+        self.heat
+            .get(key)
+            .map_or(0.0, |(h, at)| (h - (time - at) * per_second).max(0.0))
     }
 
     /// Records the keys that went down since the last call; held keys
@@ -186,6 +212,8 @@ pub const SWATCHES: [Rgb; 8] = [
 /// Recent brush colours kept.
 const RECENT: usize = 8;
 
+/// Flags of the UI's own state (dragging, painting and so on).
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 pub struct Ui {
     pub tab: Tab,
@@ -210,6 +238,8 @@ pub struct Ui {
     pub draft: Option<Settings>,
     /// Per-key brush; until picked, the lighting colour at full value.
     pub brush: Option<Hsv>,
+    /// The picker edits the second colour.
+    pub second: bool,
     /// Brush colours used lately, newest first.
     pub recent: Vec<Rgb>,
     /// The picker field being typed in, and its text.
@@ -264,11 +294,20 @@ impl Shared {
         self.lighting().is_some_and(|s| s.effect == Effect::PerKey)
     }
 
+    /// Does the picker edit the second colour?
+    pub fn editing_second(&self) -> bool {
+        self.ui.second
+            && !self.brushing()
+            && self.lighting().is_some_and(|s| s.palette == Palette::Two)
+    }
+
     /// The colour the picker shows.
     pub fn picked(&self) -> Hsv {
         let s = self.lighting().unwrap_or_default();
         if self.brushing() {
             self.ui.brush.unwrap_or(Hsv::new(s.color.h, s.color.s, 255))
+        } else if self.editing_second() {
+            s.second()
         } else {
             s.color
         }
@@ -277,6 +316,12 @@ impl Shared {
     fn pick(&mut self, hsv: Hsv, tx: &Sender<Command>) {
         if self.brushing() {
             self.ui.brush = Some(hsv);
+        } else if self.editing_second() {
+            // The second colour shares the brightness.
+            self.change_lighting(tx, |s| {
+                s.color2 = Hsv::new(hsv.h, hsv.s, 255);
+                s.color.v = hsv.v;
+            });
         } else {
             self.change_lighting(tx, |s| s.color = hsv);
         }
@@ -623,6 +668,9 @@ impl Shared {
             Hit::ClearAll => self.fill(Rgb::OFF, tx),
             Hit::Effect(effect) => self.change_lighting(tx, |s| s.effect = effect),
             Hit::OsLighting(on) => self.change_lighting(tx, |s| s.os_lighting = on),
+            Hit::Colours(p) => self.change_lighting(tx, |s| s.palette = p),
+            Hit::Second(second) => self.ui.second = second,
+            Hit::LayerKeys(on) => self.change_lighting(tx, |s| s.layer_keys = on),
             Hit::Field(f) => {
                 if self.ui.editing.as_ref().is_none_or(|(e, _)| *e != f) {
                     self.edit(f);
@@ -823,6 +871,10 @@ impl Shared {
                 self.change_lighting(tx, |s| s.color.v = byte(across));
             }
             Hit::Slider(Slider::Speed) => self.change_lighting(tx, |s| s.speed = byte(across)),
+            Hit::Slider(Slider::Background) => {
+                self.change_lighting(tx, |s| s.background = byte(across));
+            }
+            Hit::Slider(Slider::Size) => self.change_lighting(tx, |s| s.size = byte(across)),
             Hit::Square => {
                 c.s = byte(across);
                 c.v = byte(1.0 - down);

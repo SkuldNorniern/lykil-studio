@@ -11,7 +11,7 @@ use std::cell::RefCell;
 
 use aurea::AureaResult;
 use aurea::render::{Color, Image, Rect};
-use lykil::lighting::{Effect, Hsv, Point, Rgb, Settings, press_life, shade};
+use lykil::lighting::{Effect, Hsv, Moment, Palette, Point, Rgb, Settings, press_life, shade};
 use lykil::time::{Duration, Tick};
 
 use crate::anim::{Key, rate};
@@ -23,6 +23,8 @@ use crate::view::{self, Hits, Keys};
 pub struct Presses<'a> {
     pub at: &'a [Option<f32>],
     pub recent: Vec<(usize, f32)>,
+    /// Heatmap warmth per key, `0..=1`.
+    pub heat: Vec<f32>,
 }
 
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
@@ -39,11 +41,14 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     let kb = &shared.keyboard;
     let time = pen.anim.time();
     let brushing = settings.effect == Effect::PerKey;
+    let points = kb.description.as_ref().map(points).unwrap_or_default();
     let presses = Presses {
         at: &shared.ui.presses.at,
         recent: shared.ui.presses.recent.iter().copied().collect(),
+        heat: (0..points.len())
+            .map(|k| shared.ui.presses.heat_at(k, time, settings.speed))
+            .collect(),
     };
-    let points = kb.description.as_ref().map(points).unwrap_or_default();
     let kb_area = Area::new(body.x, body.y + pen.s(4.0), body.w, body.h * 0.44);
     let used = view::keyboard(
         pen,
@@ -95,7 +100,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         _ if brushing => lang
             .tr("Click or drag to paint, right click takes a key's colour. Ctrl+C and Ctrl+V copy and paste colours.")
             .into(),
-        _ if matches!(settings.effect, Effect::Reactive | Effect::Ripple) => lang
+        _ if settings.effect.reacts() => lang
             .tr("Type on the keyboard, or click keys here, to see it.")
             .into(),
         Some(i) => lang.fill(
@@ -191,12 +196,20 @@ pub fn preview(
         .copied()
         .flatten()
         .map(|t| Duration(ms(time - t)));
-    let ripples: Vec<(Point, Duration)> = presses
+    let recent: Vec<(Point, Duration)> = presses
         .recent
         .iter()
         .filter_map(|&(k, t)| Some((points.get(k).copied().flatten()?, Duration(ms(time - t)))))
         .collect();
-    shade(s, at, now, since_press, &ripples).to_rgb()
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let heat = (presses.heat.get(index).copied().unwrap_or(0.0) * 255.0) as u8;
+    let moment = Moment {
+        now,
+        pressed: since_press,
+        presses: &recent,
+        heat,
+    };
+    shade(s, at, &moment).to_rgb()
 }
 
 pub fn rgb(c: Rgb) -> Color {
@@ -214,6 +227,9 @@ pub const fn effect_name(e: Effect) -> &'static str {
         Effect::Reactive => "Reactive",
         Effect::Ripple => "Ripple",
         Effect::PerKey => "Per-key",
+        Effect::Starlight => "Starlight",
+        Effect::Rain => "Rain",
+        Effect::Heatmap => "Heatmap",
     }
 }
 
@@ -228,12 +244,23 @@ const fn effect_about(e: Effect) -> &'static str {
         Effect::Reactive => "Dim; pressed keys flash",
         Effect::Ripple => "Rings from pressed keys",
         Effect::PerKey => "Paint every key",
+        Effect::Starlight => "Keys twinkle at random",
+        Effect::Rain => "Drops fall down the board",
+        Effect::Heatmap => "Keys warm up as you type",
     }
 }
 
-/// Does the effect move, so speed matters?
-const fn moves(e: Effect) -> bool {
-    !matches!(e, Effect::Off | Effect::Solid | Effect::PerKey)
+/// Does the effect have resting keys, so the background level matters?
+const fn has_background(e: Effect) -> bool {
+    matches!(
+        e,
+        Effect::Starlight | Effect::Rain | Effect::Reactive | Effect::Ripple | Effect::Heatmap
+    )
+}
+
+/// Does the effect use the size?
+const fn has_size(e: Effect) -> bool {
+    matches!(e, Effect::Reactive | Effect::Ripple | Effect::Heatmap)
 }
 
 /// The effects as cards, four to a row, each with a live strip.
@@ -251,7 +278,9 @@ fn effect_cards(
     let cols = 4.0;
     let gap = pen.s(8.0);
     let cw = (grid.w - gap * (cols - 1.0)) / cols;
-    let ch = ((grid.h - gap) / 2.0).min(pen.s(110.0));
+    let rows = Effect::ALL.len().div_ceil(4);
+    #[allow(clippy::cast_precision_loss)]
+    let ch = ((grid.h - gap * (rows - 1) as f32) / rows as f32).min(pen.s(110.0));
     for (i, e) in Effect::ALL.into_iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
         let (col, row) = ((i % 4) as f32, (i / 4) as f32);
@@ -332,9 +361,16 @@ fn effect_strip(
     let key = (n as usize * 3 + 2) % CELLS;
     let mut at = vec![None; CELLS];
     at[key] = Some(n * every);
+    // Heat around the last press, cooling off.
+    let left = 1.0 - (time - n * every) / every;
+    #[allow(clippy::cast_precision_loss)]
+    let heat = (0..CELLS)
+        .map(|i| (1.0 - i.abs_diff(key) as f32 / 3.0).max(0.0) * left)
+        .collect();
     let presses = Presses {
         at: &at,
         recent: vec![(key, n * every)],
+        heat,
     };
     #[allow(clippy::cast_precision_loss)]
     let cell_w = strip.w / CELLS as f32;
@@ -428,8 +464,35 @@ fn picker_card(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) 
         area.x,
         area.y,
     )?;
-    let top = area.y + pen.s(20.0);
-    let side = (area.h - pen.s(20.0) - pen.s(30.0))
+    let mut top = area.y + pen.s(20.0);
+    if let Some(s) = shared.lighting().filter(|_| !brushing) {
+        segmented(
+            pen,
+            Area::new(area.x, top, area.w, pen.s(28.0)),
+            (
+                &[
+                    (lang.tr("One colour"), Hit::Colours(Palette::One)),
+                    (lang.tr("Two colours"), Hit::Colours(Palette::Two)),
+                    (lang.tr("Rainbow"), Hit::Colours(Palette::Rainbow)),
+                ],
+                1,
+            ),
+            s.palette as usize,
+            hits,
+        )?;
+        top += pen.s(36.0);
+        if s.palette == Palette::Two {
+            which_colour(
+                pen,
+                Area::new(area.x, top, area.w, pen.s(26.0)),
+                s,
+                shared,
+                hits,
+            )?;
+            top += pen.s(34.0);
+        }
+    }
+    let side = (area.bottom() - top - pen.s(30.0))
         .min(pen.s(170.0))
         .max(pen.s(60.0));
     let square = Area::new(area.x, top, side, side);
@@ -441,6 +504,69 @@ fn picker_card(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) 
         area.bottom() - top,
     );
     codes(pen, right, picked.to_rgb(), shared, hits)
+}
+
+/// Two chips, one per colour, to pick which one the picker edits.
+fn which_colour(
+    pen: &mut Pen<'_>,
+    area: Area,
+    s: Settings,
+    shared: &Shared,
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    let w = (area.w - pen.s(8.0)) / 2.0;
+    let second = shared.editing_second();
+    for (i, (name, c, hit, on)) in [
+        ("Colour 1", s.color, Hit::Second(false), !second),
+        ("Colour 2", s.second(), Hit::Second(true), second),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        #[allow(clippy::cast_precision_loss)]
+        let a = Area::new(area.x + (w + pen.s(8.0)) * i as f32, area.y, w, area.h);
+        let t = pen.hover(a, hit);
+        let bg = if on {
+            color::mix(color::RAISED, color::ACCENT, 0.2)
+        } else {
+            color::mix(color::BACKGROUND, color::RAISED, t)
+        };
+        pen.round(a, pen.s(7.0), bg)?;
+        if on {
+            pen.outline(a, pen.s(7.0), pen.s(1.5), color::ACCENT)?;
+        }
+        let dot = Area::new(
+            a.x + pen.s(8.0),
+            a.y + pen.s(6.0),
+            a.h - pen.s(12.0),
+            a.h - pen.s(12.0),
+        );
+        pen.round(
+            dot,
+            dot.w / 2.0,
+            rgb(Hsv {
+                v: c.v.max(160),
+                ..c
+            }
+            .to_rgb()),
+        )?;
+        let label = Area::new(
+            dot.right() + pen.s(8.0),
+            a.y,
+            a.right() - dot.right() - pen.s(12.0),
+            a.h,
+        );
+        pen.fitted_left(
+            lang.tr(name),
+            label,
+            11.0,
+            8.0,
+            if on { color::TEXT } else { color::DIM },
+        )?;
+        hits.push((a, hit));
+    }
+    Ok(())
 }
 
 /// The saturation and brightness square at `square`, the hue bar under
@@ -608,25 +734,31 @@ fn side_card(
 ) -> AureaResult<()> {
     let lang = pen.lang;
     let mut y = area.y;
-    slider(
-        pen,
-        Area::new(area.x, y, area.w, pen.s(40.0)),
-        (Slider::Brightness, "BRIGHTNESS", settings.color.v),
-        settings,
-        shared,
-        hits,
-    )?;
-    y += pen.s(50.0);
-    if moves(settings.effect) {
+    let e = settings.effect;
+    let sliders = [
+        (true, Slider::Brightness, "BRIGHTNESS", settings.color.v),
+        (e.moves(), Slider::Speed, "SPEED", settings.speed),
+        (
+            has_background(e),
+            Slider::Background,
+            "BACKGROUND",
+            settings.background,
+        ),
+        (has_size(e), Slider::Size, "SIZE", settings.size),
+    ];
+    for (shown, which, name, value) in sliders {
+        if !shown {
+            continue;
+        }
         slider(
             pen,
-            Area::new(area.x, y, area.w, pen.s(40.0)),
-            (Slider::Speed, "SPEED", settings.speed),
+            Area::new(area.x, y, area.w, pen.s(36.0)),
+            (which, name, value),
             settings,
             shared,
             hits,
         )?;
-        y += pen.s(50.0);
+        y += pen.s(44.0);
     }
     if settings.effect == Effect::PerKey {
         let items = [
@@ -651,18 +783,43 @@ fn side_card(
             y += pen.s(30.0);
         }
     }
-    // Who controls the lights, at the bottom.
-    let bottom = area.bottom() - pen.s(54.0);
+    // Layer keys and who controls the lights, at the bottom.
+    let bottom = area.bottom() - pen.s(104.0);
+    if bottom > y {
+        view::label(
+            pen,
+            lang.tr("LIGHT THE KEYS OF A HELD LAYER"),
+            area.x,
+            bottom,
+        )?;
+        segmented(
+            pen,
+            Area::new(area.x, bottom + pen.s(16.0), area.w, pen.s(28.0)),
+            (
+                &[
+                    (lang.tr("Off"), Hit::LayerKeys(false)),
+                    (lang.tr("On"), Hit::LayerKeys(true)),
+                ],
+                2,
+            ),
+            usize::from(settings.layer_keys),
+            hits,
+        )?;
+    }
+    let bottom = area.bottom() - pen.s(50.0);
     if bottom > y {
         view::label(pen, lang.tr("WHO CONTROLS THE LIGHTS"), area.x, bottom)?;
-        let seg = Area::new(area.x, bottom + pen.s(18.0), area.w, pen.s(32.0));
+        let seg = Area::new(area.x, bottom + pen.s(16.0), area.w, pen.s(32.0));
         segmented(
             pen,
             seg,
-            &[
-                (lang.tr("Keyboard effects"), Hit::OsLighting(false)),
-                (lang.tr("Windows Dynamic Lighting"), Hit::OsLighting(true)),
-            ],
+            (
+                &[
+                    (lang.tr("Keyboard effects"), Hit::OsLighting(false)),
+                    (lang.tr("Windows Dynamic Lighting"), Hit::OsLighting(true)),
+                ],
+                0,
+            ),
             usize::from(settings.os_lighting),
             hits,
         )?;
@@ -671,10 +828,11 @@ fn side_card(
 }
 
 /// Options side by side in one bar; the chosen one's background slides.
+/// `id` tells the bars apart for the slide.
 fn segmented(
     pen: &mut Pen<'_>,
     a: Area,
-    items: &[(&str, Hit)],
+    (items, id): (&[(&str, Hit)], usize),
     chosen: usize,
     hits: &mut Hits,
 ) -> AureaResult<()> {
@@ -682,7 +840,9 @@ fn segmented(
     #[allow(clippy::cast_precision_loss)]
     let w = (a.w - pen.s(4.0)) / items.len() as f32;
     #[allow(clippy::cast_precision_loss)]
-    let at = pen.anim.to(Key::Selected(2000), chosen as f32, rate::SLIDE);
+    let at = pen
+        .anim
+        .to(Key::Selected(2000 + id), chosen as f32, rate::SLIDE);
     let knob = Area::new(
         a.x + pen.s(2.0) + w * at,
         a.y + pen.s(2.0),
@@ -744,7 +904,8 @@ fn slider(
         let v = (u32::from(i) * 255 / u32::from(STEPS - 1)) as u8;
         let c = match which {
             Slider::Brightness => Hsv::new(settings.color.h, settings.color.s, v).to_rgb(),
-            Slider::Speed => Hsv::new(0, 0, 60 + v / 3).to_rgb(),
+            Slider::Speed | Slider::Size => Hsv::new(0, 0, 60 + v / 3).to_rgb(),
+            Slider::Background => Hsv::new(settings.color.h, settings.color.s, v / 2).to_rgb(),
         };
         let seg = Area::new(
             inner.x + seg_w * f32::from(i),
