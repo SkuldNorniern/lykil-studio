@@ -150,6 +150,8 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
 
     // Language, left of the connection.
     let other = lang.other().label();
+    // In its own language's font: the current one may not have its letters.
+    let font = aurea::render::Font::new(lang.other().font_family(), pen.s(12.0));
     let lw = pen.width(other, &font) + pen.s(20.0);
     let lang = Area::new(
         right - tw - pen.s(28.0) - lw,
@@ -543,6 +545,7 @@ fn keymap_tab(
     }
     pen.round(panel, pen.s(12.0), color::SURFACE)?;
     let desc = kb.description.as_ref();
+    let hovered = hovered_key(ui, desc, bindings, &layers);
     let Some((index, info)) = ui.selected.and_then(|k| desc?.keys.get(k).map(|d| (k, d))) else {
         pen.centred(
             lang.tr("Click a key to change what it does"),
@@ -550,9 +553,10 @@ fn keymap_tab(
             &pen.font(14.0),
             color::DIM,
         )?;
-        return Ok(lang
-            .tr("Click a key, then pick a binding. Changes are saved on the keyboard.")
-            .into());
+        return Ok(hovered.unwrap_or_else(|| {
+            lang.tr("Click a key, then pick a binding. Changes are saved on the keyboard.")
+                .into()
+        }));
     };
     let current = bindings.get(index).copied().unwrap_or_default();
 
@@ -563,36 +567,10 @@ fn keymap_tab(
         pen.s(300.0),
         panel.h - pen.s(36.0),
     );
-    let (main, _) = legend::keycap(current, &layers);
-    let cap = Area::new(left.x, left.y, pen.s(58.0), pen.s(58.0));
-    pen.round(
-        cap,
-        pen.s(8.0),
-        color::mix(color::ACCENT, color::BACKGROUND, 0.5),
-    )?;
-    pen.round(cap.inset(pen.s(3.0)), pen.s(7.0), color::ACCENT)?;
-    pen.fitted(&main, cap.inset(pen.s(8.0)), 16.0, 8.0, color::ACCENT_TEXT)?;
-    let tx = cap.right() + pen.s(14.0);
     let layer_name = layers
         .get(usize::from(ui.layer))
         .map_or("?", String::as_str);
-    pen.text(
-        &lang.fill("{} on {}", &[&info.id, layer_name]),
-        tx,
-        cap.y + pen.s(4.0),
-        &pen.bold(14.0),
-        color::TEXT,
-    )?;
-    let full = legend::full(current, &layers);
-    let now = Area::new(tx, cap.y + pen.s(28.0), left.right() - tx, pen.s(18.0));
-    pen.fitted_left(&full, now, 12.0, 8.0, color::ACCENT)?;
-    let parts = Area::new(
-        left.x,
-        cap.bottom() + pen.s(16.0),
-        left.w,
-        left.bottom() - cap.bottom() - pen.s(16.0),
-    );
-    key_parts(pen, parts, current, &layers, hits)?;
+    key_card(pen, left, (&info.id, layer_name), current, &layers, hits)?;
 
     // Right: the palette.
     let right = Area::new(
@@ -609,10 +587,68 @@ fn keymap_tab(
         (ui.group, !kb.macros.is_empty()),
         hits,
     )?;
-    Ok(lang.fill(
-        "Editing {} on {}. A pick moves on to the next key. Esc to stop.",
-        &[&info.id, layer_name],
-    ))
+    Ok(hovered.unwrap_or_else(|| {
+        lang.fill(
+            "Editing {} on {}. A pick moves on to the next key. Esc to stop.",
+            &[&info.id, layer_name],
+        )
+    }))
+}
+
+/// The selected key: its keycap, what it does, and its hold and modifier
+/// controls.
+fn key_card(
+    pen: &mut Pen<'_>,
+    left: Area,
+    (id, layer_name): (&str, &str),
+    current: Binding,
+    layers: &[String],
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    let (main, _) = legend::keycap(current, layers);
+    let cap = Area::new(left.x, left.y, pen.s(58.0), pen.s(58.0));
+    pen.round(
+        cap,
+        pen.s(8.0),
+        color::mix(color::ACCENT, color::BACKGROUND, 0.5),
+    )?;
+    pen.round(cap.inset(pen.s(3.0)), pen.s(7.0), color::ACCENT)?;
+    pen.fitted(&main, cap.inset(pen.s(8.0)), 16.0, 8.0, color::ACCENT_TEXT)?;
+    let tx = cap.right() + pen.s(14.0);
+    pen.text(
+        &lang.fill("{} on {}", &[id, layer_name]),
+        tx,
+        cap.y + pen.s(4.0),
+        &pen.bold(14.0),
+        color::TEXT,
+    )?;
+    let full = legend::full(current, layers);
+    let now = Area::new(tx, cap.y + pen.s(28.0), left.right() - tx, pen.s(18.0));
+    pen.fitted_left(&full, now, 12.0, 8.0, color::ACCENT)?;
+    let parts = Area::new(
+        left.x,
+        cap.bottom() + pen.s(16.0),
+        left.w,
+        left.bottom() - cap.bottom() - pen.s(16.0),
+    );
+    key_parts(pen, parts, current, layers, hits)?;
+    Ok(())
+}
+
+/// `id: binding` of the key under the mouse, for the footer.
+fn hovered_key(
+    ui: &crate::app::Ui,
+    desc: Option<&Description>,
+    bindings: &[Binding],
+    layers: &[String],
+) -> Option<String> {
+    let Some(Hit::Key(k)) = ui.hovered() else {
+        return None;
+    };
+    let id = &desc?.keys.get(k)?.id;
+    let b = bindings.get(k).copied().unwrap_or_default();
+    Some(format!("{id}: {}", legend::full(b, layers)))
 }
 
 /// "When held" and "send with" for the selected key, where they apply.

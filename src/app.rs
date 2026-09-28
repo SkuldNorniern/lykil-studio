@@ -223,9 +223,25 @@ impl Shared {
                 !typable.is_empty()
             }
             WindowEvent::MouseExited => {
+                // A release outside the window never arrives.
                 self.ui.mouse = (-1.0, -1.0);
+                self.ui.drag = None;
+                self.ui.painting = false;
                 true
             }
+            WindowEvent::KeyInput {
+                key, pressed: true, ..
+            } if self.ui.tab == Tab::Keymap && self.ui.selected.is_some() => match key {
+                KeyCode::Left => self.step_selection(-1.0, 0.0),
+                KeyCode::Right => self.step_selection(1.0, 0.0),
+                KeyCode::Up => self.step_selection(0.0, -1.0),
+                KeyCode::Down => self.step_selection(0.0, 1.0),
+                KeyCode::Delete => {
+                    self.assign(Binding::None, tx, false);
+                    true
+                }
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -320,6 +336,41 @@ impl Shared {
                     self.slide(slider, track, tx);
                 }
             }
+        }
+    }
+
+    /// Moves the selection to the nearest key in direction `(dx, dy)`.
+    fn step_selection(&mut self, dx: f64, dy: f64) -> bool {
+        let (Some(desc), Some(current)) = (&self.keyboard.description, self.ui.selected) else {
+            return false;
+        };
+        let centre = |i: usize| {
+            desc.keys
+                .get(i)?
+                .geometry
+                .map(|[x, y, w, h]| (x + w / 2.0, y + h / 2.0))
+        };
+        let Some((cx, cy)) = centre(current) else {
+            return false;
+        };
+        // Along the direction counts once, across it counts three times,
+        // so a step stays in its row or column when it can.
+        let next = (0..desc.keys.len())
+            .filter(|&i| i != current)
+            .filter_map(|i| {
+                let (x, y) = centre(i)?;
+                let along = (x - cx) * dx + (y - cy) * dy;
+                let across = ((x - cx) * dy).abs() + ((y - cy) * dx).abs();
+                (along > 0.1).then_some((i, along + 3.0 * across))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i);
+        match next {
+            Some(i) => {
+                self.ui.selected = Some(i);
+                true
+            }
+            None => false,
         }
     }
 
