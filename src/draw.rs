@@ -83,6 +83,8 @@ pub struct Pen<'a> {
     pub ctx: &'a mut dyn DrawingContext,
     pub scale: f32,
     pub mouse: (f32, f32),
+    /// Font family for all text.
+    pub family: &'static str,
 }
 
 impl Pen<'_> {
@@ -96,11 +98,11 @@ impl Pen<'_> {
     }
 
     pub fn font(&self, size: f32) -> Font {
-        Font::new("", self.s(size))
+        Font::new(self.family, self.s(size))
     }
 
     pub fn bold(&self, size: f32) -> Font {
-        Font::new("", self.s(size)).with_weight(FontWeight::Bold)
+        Font::new(self.family, self.s(size)).with_weight(FontWeight::Bold)
     }
 
     pub fn fill(&mut self, area: Area, c: Color) -> AureaResult<()> {

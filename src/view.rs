@@ -38,6 +38,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         ctx,
         scale,
         mouse: shared.ui.mouse,
+        family: "Segoe UI",
     };
     let mut hits = Hits::new();
     pen.fill(Area::new(0.0, 0.0, w, h), color::BACKGROUND)?;
