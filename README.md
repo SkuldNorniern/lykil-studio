@@ -21,4 +21,4 @@ the whole window is one canvas: `view.rs` draws it and records where every contr
 
 needs the Aurea redraw fix (`fix(render): repaint every tile inside the clipped region`). without it, keys go missing after a click.
 
-later: macros with delays and held keys from the UI (the keyboard and CLI already take them), VIA's macro tab, scrolling for long palettes.
+later: macros with delays and held keys from the UI (the keyboard already plays them), VIA's macro tab, scrolling for long palettes.
