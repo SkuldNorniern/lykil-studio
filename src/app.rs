@@ -108,6 +108,8 @@ pub struct Ui {
     pub time: f32,
     /// Canvas pixels per design pixel.
     pub scale: f32,
+    /// Frames drawn, for [`crate::view`]'s repaint workaround.
+    pub frame: u32,
     pub lang: crate::lang::Lang,
     /// A message from Studio itself for the footer, until the next click.
     pub notice: Option<String>,

@@ -133,7 +133,6 @@ fn poll(
     canvas: CanvasId,
 ) -> String {
     let hello = *device.hello();
-    let name = device.name().to_string();
     let loaded = (|| -> Result<_, DeviceError> {
         let description = device.describe()?;
         let keymap = (0..hello.layers)
@@ -164,7 +163,9 @@ fn poll(
     update(shared, canvas, |k| {
         *k = Keyboard {
             connection: Connection::Connected,
-            name: name.clone(),
+            // The description's name: Windows may report an interface name
+            // as the product string.
+            name: description.name.clone(),
             hello: Some(hello),
             description: Some(description),
             keymap,
