@@ -9,10 +9,12 @@ use std::sync::mpsc::Sender;
 
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
+use lykil::keycode::Modifiers;
 use lykil::lighting::{Effect, Settings};
 
 use crate::device::{Command, Keyboard};
 use crate::draw::Area;
+use crate::edit::{self, Hold};
 
 /// Everything the draw callback and the input handler share.
 #[derive(Debug, Default)]
@@ -58,6 +60,10 @@ pub enum Hit {
     /// A palette group.
     Group(usize),
     Palette(Binding),
+    /// What the selected key does when held.
+    Hold(Hold),
+    /// A modifier sent with the selected key, switched on or off.
+    With(Modifiers),
     ResetKeymap,
     Effect(Effect),
     Slider(Slider),
@@ -191,7 +197,23 @@ impl Shared {
                 };
             }
             Hit::Group(g) => self.ui.group = g,
-            Hit::Palette(binding) => self.assign(binding, tx),
+            Hit::Palette(binding) => self.assign(binding, tx, true),
+            Hit::Hold(hold) => {
+                if let Some(b) = self
+                    .selected_binding()
+                    .and_then(|b| edit::set_hold(b, hold))
+                {
+                    self.assign(b, tx, false);
+                }
+            }
+            Hit::With(m) => {
+                if let Some(b) = self
+                    .selected_binding()
+                    .and_then(|b| edit::toggle_with(b, m))
+                {
+                    self.assign(b, tx, false);
+                }
+            }
             Hit::ResetKeymap => {
                 if self.ui.confirm_reset {
                     self.ui.confirm_reset = false;
@@ -218,8 +240,18 @@ impl Shared {
         }
     }
 
-    /// Puts `binding` on the selected key and moves to the next key.
-    fn assign(&mut self, binding: Binding, tx: &Sender<Command>) {
+    /// The binding of the selected key on the shown layer.
+    pub fn selected_binding(&self) -> Option<Binding> {
+        self.keyboard
+            .keymap
+            .get(usize::from(self.ui.layer))?
+            .get(self.ui.selected?)
+            .copied()
+    }
+
+    /// Puts `binding` on the selected key; `advance` moves on to the next
+    /// key.
+    fn assign(&mut self, binding: Binding, tx: &Sender<Command>, advance: bool) {
         let Some(key) = self.ui.selected else {
             return;
         };
@@ -239,12 +271,14 @@ impl Shared {
             key: position,
             binding,
         });
-        let keys = self
-            .keyboard
-            .description
-            .as_ref()
-            .map_or(0, |d| d.keys.len());
-        self.ui.selected = (key + 1 < keys).then_some(key + 1);
+        if advance {
+            let keys = self
+                .keyboard
+                .description
+                .as_ref()
+                .map_or(0, |d| d.keys.len());
+            self.ui.selected = (key + 1 < keys).then_some(key + 1);
+        }
     }
 
     fn slide(&mut self, slider: Slider, track: Area, tx: &Sender<Command>) {

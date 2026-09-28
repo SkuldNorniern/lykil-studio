@@ -12,6 +12,7 @@
 mod app;
 mod device;
 mod draw;
+mod edit;
 mod legend;
 mod view;
 

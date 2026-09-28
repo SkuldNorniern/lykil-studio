@@ -5,6 +5,8 @@ use lykil::binding::Binding;
 use lykil::keycode::{ConsumerCode, KeyCode, Modifiers};
 use lykil::layer::LayerId;
 use lykil::oneshot::{OneShotTarget, Switch};
+
+use crate::edit::MODS;
 use lykil_config::names;
 
 /// Short keycap text for key names that are too long.
@@ -225,6 +227,14 @@ pub fn palette(layers: &[String]) -> Vec<Group> {
         Group {
             name: "Layers: toggle",
             items: (0..n).map(|l| Binding::ToggleLayer(LayerId(l))).collect(),
+        },
+        Group {
+            name: "One-shot",
+            items: MODS
+                .iter()
+                .map(|(_, m)| Binding::OneShot(OneShotTarget::Modifiers(*m)))
+                .chain((0..n).map(|l| Binding::OneShot(OneShotTarget::Layer(LayerId(l)))))
+                .collect(),
         },
         Group {
             name: "Special",

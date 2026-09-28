@@ -14,6 +14,7 @@ use lykil_protocol::lcp;
 use crate::app::{Hit, Shared, Slider, Tab};
 use crate::device::{Connection, Keyboard};
 use crate::draw::{Area, Pen, color};
+use crate::edit::{self, Hold};
 use crate::legend;
 
 const HEADER: f32 = 60.0;
@@ -471,12 +472,11 @@ fn keymap_tab(
     let left = Area::new(
         panel.x + pen.s(20.0),
         panel.y + pen.s(18.0),
-        pen.s(190.0),
+        pen.s(300.0),
         panel.h - pen.s(36.0),
     );
-    label(pen, "KEY", left.x, left.y)?;
     let (main, _) = legend::keycap(current, &layers);
-    let cap = Area::new(left.x, left.y + pen.s(20.0), pen.s(64.0), pen.s(64.0));
+    let cap = Area::new(left.x, left.y, pen.s(58.0), pen.s(58.0));
     pen.round(
         cap,
         pen.s(8.0),
@@ -484,27 +484,27 @@ fn keymap_tab(
     )?;
     pen.round(cap.inset(pen.s(3.0)), pen.s(7.0), color::ACCENT)?;
     pen.fitted(&main, cap.inset(pen.s(8.0)), 16.0, 8.0, color::ACCENT_TEXT)?;
-    pen.text(
-        &info.id,
-        cap.right() + pen.s(14.0),
-        cap.y + pen.s(10.0),
-        &pen.bold(15.0),
-        color::TEXT,
-    )?;
+    let tx = cap.right() + pen.s(14.0);
     let layer_name = layers
         .get(usize::from(ui.layer))
         .map_or("?", String::as_str);
     pen.text(
-        &format!("on {layer_name}"),
-        cap.right() + pen.s(14.0),
-        cap.y + pen.s(34.0),
-        &pen.font(12.0),
-        color::DIM,
+        &format!("{} on {layer_name}", info.id),
+        tx,
+        cap.y + pen.s(4.0),
+        &pen.bold(14.0),
+        color::TEXT,
     )?;
-    label(pen, "DOES NOW", left.x, cap.bottom() + pen.s(18.0))?;
     let full = legend::full(current, &layers);
-    let now = Area::new(left.x, cap.bottom() + pen.s(36.0), left.w, pen.s(18.0));
-    pen.fitted_left(&full, now, 13.0, 8.0, color::ACCENT)?;
+    let now = Area::new(tx, cap.y + pen.s(28.0), left.right() - tx, pen.s(18.0));
+    pen.fitted_left(&full, now, 12.0, 8.0, color::ACCENT)?;
+    let parts = Area::new(
+        left.x,
+        cap.bottom() + pen.s(16.0),
+        left.w,
+        left.bottom() - cap.bottom() - pen.s(16.0),
+    );
+    key_parts(pen, parts, current, &layers, hits)?;
 
     // Right: the palette.
     let right = Area::new(
@@ -518,6 +518,95 @@ fn keymap_tab(
         "Editing {} on {layer_name}. A pick moves on to the next key. Esc to stop.",
         info.id
     ))
+}
+
+/// "When held" and "send with" for the selected key, where they apply.
+fn key_parts(
+    pen: &mut Pen<'_>,
+    area: Area,
+    current: Binding,
+    layers: &[String],
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let mut y = area.y;
+    if let Some(now) = edit::hold(current) {
+        label(pen, "WHEN HELD", area.x, y)?;
+        y += pen.s(16.0);
+        let mut items = vec![(
+            "tap only".to_string(),
+            Hit::Hold(Hold::Nothing),
+            now == Hold::Nothing,
+        )];
+        for (name, m) in edit::MODS {
+            items.push((
+                name.to_string(),
+                Hit::Hold(Hold::Mods(m)),
+                now == Hold::Mods(m),
+            ));
+        }
+        for (i, name) in layers.iter().enumerate() {
+            let Ok(l) = u8::try_from(i) else { continue };
+            let hold = Hold::Layer(lykil::layer::LayerId(l));
+            items.push((name.clone(), Hit::Hold(hold), now == hold));
+        }
+        y = small_pills(
+            pen,
+            Area::new(area.x, y, area.w, area.bottom() - y),
+            &items,
+            hits,
+        )? + pen.s(10.0);
+    }
+    if let Some(mods) = edit::with(current) {
+        label(pen, "SEND WITH", area.x, y)?;
+        y += pen.s(16.0);
+        let items: Vec<_> = edit::MODS
+            .iter()
+            .map(|(name, m)| ((*name).to_string(), Hit::With(*m), mods.0 & m.0 != 0))
+            .collect();
+        small_pills(
+            pen,
+            Area::new(area.x, y, area.w, area.bottom() - y),
+            &items,
+            hits,
+        )?;
+    }
+    Ok(())
+}
+
+/// Small pills that wrap inside `area`; returns the bottom of the last
+/// row.
+fn small_pills(
+    pen: &mut Pen<'_>,
+    area: Area,
+    items: &[(String, Hit, bool)],
+    hits: &mut Hits,
+) -> AureaResult<f32> {
+    let font = pen.font(11.0);
+    let pill_h = pen.s(24.0);
+    let (mut x, mut y) = (area.x, area.y);
+    for (text, hit, active) in items {
+        let w = pen.width(text, &font) + pen.s(18.0);
+        if x + w > area.right() && x > area.x {
+            x = area.x;
+            y += pill_h + pen.s(5.0);
+        }
+        if y + pill_h > area.bottom() {
+            break;
+        }
+        let a = Area::new(x, y, w, pill_h);
+        let (bg, fg) = if *active {
+            (color::ACCENT, color::ACCENT_TEXT)
+        } else if pen.hovered(a) {
+            (color::HOVER, color::TEXT)
+        } else {
+            (color::RAISED, color::DIM)
+        };
+        pen.round(a, pill_h / 2.0, bg)?;
+        pen.centred(text, a, &font, fg)?;
+        hits.push((a, *hit));
+        x += w + pen.s(5.0);
+    }
+    Ok(y + pill_h)
 }
 
 /// Layer pills on the left, reset on the right.
