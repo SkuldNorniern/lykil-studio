@@ -61,6 +61,9 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         hits,
     )?;
 
+    if kb.lighting.is_some_and(|i| i.host) {
+        host_banner(pen, used, settings.os_lighting, hits)?;
+    }
     let top = used.bottom() + pen.s(18.0);
     let gap = pen.s(16.0);
     let rest = Area::new(body.x, top, body.w, body.bottom() - top);
@@ -101,6 +104,47 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         ),
         None => String::new(),
     })
+}
+
+/// Over the preview while a host has the LEDs: the effect shown is not
+/// what the keyboard does, and a way back to it.
+fn host_banner(pen: &mut Pen<'_>, preview: Area, os: bool, hits: &mut Hits) -> AureaResult<()> {
+    let lang = pen.lang;
+    let text = if os {
+        lang.tr("Windows Dynamic Lighting has the LEDs, so the effect below does not run.")
+    } else {
+        lang.tr("An app has the LEDs; the effect comes back when it lets go.")
+    };
+    let font = pen.bold(13.0);
+    let button = lang.tr("Use keyboard effects");
+    let bw = if os {
+        pen.width(button, &pen.bold(12.0)) + pen.s(28.0)
+    } else {
+        0.0
+    };
+    let w = (pen.width(text, &font) + bw + pen.s(48.0)).min(preview.w);
+    let bar = Area::new(
+        preview.x + (preview.w - w) / 2.0,
+        preview.y + preview.h / 2.0 - pen.s(26.0),
+        w,
+        pen.s(52.0),
+    );
+    pen.veil(preview, color::BACKGROUND, 0.55)?;
+    pen.round(bar, pen.s(12.0), color::RAISED)?;
+    pen.outline(bar, pen.s(12.0), pen.s(1.0), color::BORDER)?;
+    let text_area = Area::new(bar.x + pen.s(20.0), bar.y, bar.w - bw - pen.s(36.0), bar.h);
+    pen.fitted_left(text, text_area, 13.0, 9.0, color::TEXT)?;
+    if os {
+        let items = [(button.to_string(), Hit::OsLighting(false), true)];
+        view::pills(
+            pen,
+            bar.right() - bw - pen.s(8.0),
+            bar.y + pen.s(11.0),
+            &items,
+            hits,
+        )?;
+    }
+    Ok(())
 }
 
 /// Each key's place for the effects, as the firmware computes it: key
@@ -310,7 +354,7 @@ fn effect_strip(
             cell_w - pen.s(2.0),
             strip.h,
         );
-        let face = color::mix(color::BACKGROUND, rgb(c), 0.92);
+        let face = color::mix(color::HOVER, rgb(c), 0.9);
         pen.round(cell, pen.s(3.0), face)?;
     }
     Ok(())

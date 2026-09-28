@@ -206,6 +206,15 @@ const KO: &[(&str, &str)] = &[
         "Type on the keyboard, or click keys here, to see it.",
         "키보드를 치거나 여기서 키를 눌러 확인하세요.",
     ),
+    (
+        "Windows Dynamic Lighting has the LEDs, so the effect below does not run.",
+        "Windows 동적 조명이 LED를 제어하고 있어서 아래 효과가 켜지지 않습니다.",
+    ),
+    (
+        "An app has the LEDs; the effect comes back when it lets go.",
+        "앱이 LED를 제어하고 있습니다. 앱이 놓으면 효과가 돌아옵니다.",
+    ),
+    ("Use keyboard effects", "키보드 효과 사용"),
     ("BRIGHTNESS", "밝기"),
     ("SPEED", "속도"),
     (
