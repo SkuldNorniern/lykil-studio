@@ -9,12 +9,15 @@
 //! The window is one canvas drawn by [`view`]; input goes through
 //! [`app`], the keyboard lives on a thread in [`device`].
 
+mod anim;
 mod app;
+mod colour;
 mod device;
 mod draw;
 mod edit;
 mod lang;
 mod legend;
+mod lights;
 mod view;
 
 use std::process::ExitCode;
@@ -30,8 +33,8 @@ use crate::app::Shared;
 
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 800;
-/// Lighting preview frame time.
-const PREVIEW_FRAME: Duration = Duration::from_millis(33);
+/// Frame time while something moves.
+const FRAME: Duration = Duration::from_millis(16);
 
 fn main() -> ExitCode {
     match run() {
@@ -80,15 +83,18 @@ fn run() -> aurea::AureaResult<()> {
         }
     });
 
-    // The lighting preview runs only while it has something to show.
-    let preview = Arc::clone(&shared);
+    // Frames come only while something moves: eased values every frame,
+    // the lighting preview every other one.
+    let ticking = Arc::clone(&shared);
     thread::spawn(move || {
+        let mut odd = false;
         loop {
-            thread::sleep(PREVIEW_FRAME);
-            let mut s = lock(&preview);
-            if s.animating() {
-                s.ui.time += PREVIEW_FRAME.as_secs_f32();
-                drop(s);
+            thread::sleep(FRAME);
+            odd = !odd;
+            let s = lock(&ticking);
+            let moving = s.ui.anim.busy() || (odd && s.animating());
+            drop(s);
+            if moving {
                 request_canvas_redraw(id);
             }
         }

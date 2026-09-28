@@ -4,6 +4,9 @@
 //! (at 100 % display scale) into pixels.
 
 use aurea::AureaResult;
+
+use crate::anim::{Anim, Key, rate};
+use crate::app::Hit;
 use aurea::render::{
     Color, DrawingContext, Font, FontWeight, Paint, PaintStyle, Path, PathCommand, Point, Rect,
 };
@@ -78,17 +81,25 @@ impl Area {
     }
 }
 
-/// A drawing context with the display scale and the mouse position.
+/// A drawing context with the display scale, the mouse position and the
+/// UI's eased values.
 pub struct Pen<'a> {
     pub ctx: &'a mut dyn DrawingContext,
     pub scale: f32,
     pub mouse: (f32, f32),
     pub lang: crate::lang::Lang,
+    pub anim: &'a mut Anim,
 }
 
 impl Pen<'_> {
     pub fn hovered(&self, area: Area) -> bool {
         area.contains(self.mouse.0, self.mouse.1)
+    }
+
+    /// How hovered `hit` at `area` is, easing between 0 and 1.
+    pub fn hover(&mut self, area: Area, hit: Hit) -> f32 {
+        let target = if self.hovered(area) { 1.0 } else { 0.0 };
+        self.anim.to(Key::Hover(hit), target, rate::HOVER)
     }
 
     /// Design pixels to canvas pixels.
@@ -102,6 +113,14 @@ impl Pen<'_> {
 
     pub fn bold(&self, size: f32) -> Font {
         Font::new(self.lang.font_family(), self.s(size)).with_weight(FontWeight::Bold)
+    }
+
+    /// `c` over what is there, `alpha` 0 (nothing) to 1.
+    pub fn veil(&mut self, area: Area, c: Color, alpha: f32) -> AureaResult<()> {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
+        self.ctx
+            .draw_rect(area.rect(), &fill(Color::rgba(c.r, c.g, c.b, a)))
     }
 
     pub fn fill(&mut self, area: Area, c: Color) -> AureaResult<()> {

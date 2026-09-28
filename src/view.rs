@@ -7,15 +7,17 @@
 use aurea::AureaResult;
 use aurea::render::{Color, DrawingContext};
 use lykil::binding::Binding;
-use lykil::lighting::{Effect, Hsv, Rgb, Settings};
+use lykil::lighting::{Effect, Point, Rgb, Settings};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp;
 
-use crate::app::{Hit, Shared, Slider, Tab};
+use crate::anim::{self, Key, rate};
+use crate::app::{Hit, Shared, Tab};
 use crate::device::{Connection, Keyboard};
 use crate::draw::{Area, Pen, color};
 use crate::edit::{self, Hold};
 use crate::legend;
+use crate::lights::{self, Presses};
 
 const HEADER: f32 = 60.0;
 const FOOTER: f32 = 30.0;
@@ -23,7 +25,7 @@ const MARGIN: f32 = 24.0;
 /// Largest key unit, in design pixels.
 const MAX_UNIT: f32 = 58.0;
 
-type Hits = Vec<(Area, Hit)>;
+pub type Hits = Vec<(Area, Hit)>;
 
 pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()> {
     #[allow(clippy::cast_precision_loss)]
@@ -34,33 +36,53 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         1.0
     };
     shared.settle();
+    shared.follow_presses();
+    // The pen holds the eased values while the pages read `shared`.
+    let mut anim = std::mem::take(&mut shared.ui.anim);
+    anim.frame();
     let mut pen = Pen {
         ctx,
         scale,
         mouse: shared.ui.mouse,
         lang: shared.ui.lang,
+        anim: &mut anim,
     };
     let mut hits = Hits::new();
     pen.fill(Area::new(0.0, 0.0, w, h), color::BACKGROUND)?;
 
     header(&mut pen, w, shared, &mut hits)?;
-    let body = Area::new(
+    let full = Area::new(
         pen.s(MARGIN),
         pen.s(HEADER + 8.0),
         w - pen.s(2.0 * MARGIN),
         h - pen.s(HEADER + 8.0 + FOOTER),
     );
+    // A new page rises into place and fades in.
+    let arrived = anim::smooth(pen.anim.to(Key::Page, 1.0, rate::PAGE));
+    let body = Area::new(
+        full.x,
+        full.y + pen.s(14.0) * (1.0 - arrived),
+        full.w,
+        full.h,
+    );
     let status = if shared.keyboard.connection == Connection::Connected {
         match shared.ui.tab {
             Tab::Keymap => keymap_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Macros => macros_tab(&mut pen, body, shared, &mut hits)?,
-            Tab::Lighting => lighting_tab(&mut pen, body, shared, &mut hits)?,
+            Tab::Lighting => lights::tab(&mut pen, body, shared, &mut hits)?,
             Tab::Device => device_tab(&mut pen, body, shared, &mut hits)?,
         }
     } else {
         waiting(&mut pen, body, &shared.keyboard)?;
         String::new()
     };
+    if arrived < 1.0 {
+        pen.veil(
+            Area::new(0.0, full.y - pen.s(8.0), w, full.h + pen.s(8.0)),
+            color::BACKGROUND,
+            1.0 - arrived,
+        )?;
+    }
     footer(
         &mut pen,
         (w, h),
@@ -71,6 +93,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
     shared.ui.frame = shared.ui.frame.wrapping_add(1);
     repaint_everything(&mut pen, w, h, shared.ui.frame)?;
     shared.ui.hits = hits;
+    shared.ui.anim = anim;
     Ok(())
 }
 
@@ -122,28 +145,33 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     let total = tab_w * Tab::ALL.len() as f32 + pen.s(8.0);
     let bar = Area::new((w - total) / 2.0, pen.s(13.0), total, tab_h + pen.s(8.0));
     pen.round(bar, pen.s(10.0), color::BACKGROUND)?;
+    let pad = pen.s(4.0);
+    let tab_at = |i: f32| Area::new(bar.x + pad + tab_w * i, bar.y + pad, tab_w, tab_h);
+    let current = Tab::ALL
+        .iter()
+        .position(|t| *t == shared.ui.tab)
+        .unwrap_or(0);
+    #[allow(clippy::cast_precision_loss)]
+    let at = pen.anim.to(Key::TabBar, current as f32, rate::SLIDE);
     for (i, tab) in Tab::ALL.into_iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
-        let a = Area::new(
-            bar.x + pen.s(4.0) + tab_w * i as f32,
-            bar.y + pen.s(4.0),
-            tab_w,
-            tab_h,
-        );
-        let active = shared.ui.tab == tab;
-        let bg = if active {
-            color::ACCENT
-        } else if shared.ui.is_hovered(a) {
-            color::RAISED
-        } else {
-            color::BACKGROUND
-        };
-        pen.round(a, pen.s(8.0), bg)?;
-        let fg = if active {
-            color::ACCENT_TEXT
-        } else {
-            color::DIM
-        };
+        let a = tab_at(i as f32);
+        let t = pen.hover(a, Hit::Tab(tab));
+        if t > 0.01 {
+            pen.round(
+                a,
+                pen.s(8.0),
+                color::mix(color::BACKGROUND, color::RAISED, t),
+            )?;
+        }
+    }
+    pen.round(tab_at(at), pen.s(8.0), color::ACCENT)?;
+    for (i, tab) in Tab::ALL.into_iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = tab_at(i as f32);
+        #[allow(clippy::cast_precision_loss)]
+        let near = 1.0 - (at - i as f32).abs().min(1.0);
+        let fg = color::mix(color::DIM, color::ACCENT_TEXT, near);
         pen.centred(lang.tr(tab.name()), a, &pen.bold(13.0), fg)?;
         hits.push((a, Hit::Tab(tab)));
     }
@@ -182,12 +210,12 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
         lw,
         pen.s(24.0),
     );
-    let bg = if pen.hovered(lang) {
-        color::HOVER
-    } else {
-        color::RAISED
-    };
-    pen.round(lang, pen.s(12.0), bg)?;
+    let t = pen.hover(lang, Hit::Lang);
+    pen.round(
+        lang,
+        pen.s(12.0),
+        color::mix(color::RAISED, color::HOVER, t),
+    )?;
     pen.centred(other, lang, &font, color::DIM)?;
     hits.push((lang, Hit::Lang));
     Ok(())
@@ -282,7 +310,7 @@ fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard) -> AureaResult<()> {
 }
 
 /// How keys are coloured and labelled.
-enum Keys<'a> {
+pub enum Keys<'a> {
     /// Bindings of a layer; the selected key is outlined.
     Keymap {
         bindings: &'a [Binding],
@@ -290,18 +318,22 @@ enum Keys<'a> {
         selected: Option<usize>,
     },
     /// The lighting preview at `time` seconds; `colors` are the per-key
-    /// colours by LED.
+    /// colours by LED, `points` each key's place for the effects, `brush`
+    /// the per-key brush shown on the key under the mouse.
     Lighting {
         settings: Settings,
         time: f32,
         colors: &'a [Rgb],
+        points: &'a [Option<Point>],
+        presses: &'a Presses<'a>,
+        brush: Option<Rgb>,
     },
     /// Key ids and what is pressed.
     Device,
 }
 
 /// Draws the keyboard in `area`; returns the area it used.
-fn keyboard(
+pub fn keyboard(
     pen: &mut Pen<'_>,
     area: Area,
     kb: &Keyboard,
@@ -344,8 +376,11 @@ fn keyboard(
             id: &key.id,
             led: key.led,
             down: key.cell.is_some_and(|c| kb.closed(c)),
-            hovered: hover_keys && pen.hovered(cap),
-            x: ((x + kw / 2.0 - x0) / (x1 - x0)) as f32,
+            hovered: if hover_keys {
+                pen.hover(cap, Hit::Key(i))
+            } else {
+                0.0
+            },
         };
         keycap(pen, cap, &info, keys)?;
         if hover_keys {
@@ -362,59 +397,71 @@ struct Cap<'a> {
     id: &'a str,
     led: Option<u16>,
     down: bool,
-    hovered: bool,
-    /// Centre across the board, `0..=1`.
-    x: f32,
+    /// How hovered, 0 to 1.
+    hovered: f32,
 }
 
 fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> AureaResult<()> {
     let Cap {
         index,
         id,
-        led,
+        led: _,
         down,
         hovered,
-        x: x_norm,
     } = *info;
     let radius = pen.s(6.0);
     let (face, selected) = match keys {
-        Keys::Lighting {
-            settings,
-            time,
-            colors,
-        } => {
-            let own = led.and_then(|l| colors.get(usize::from(l)).copied());
-            let lit = preview(*settings, x_norm, *time, down, own);
-            let face = color::mix(color::SURFACE, lit, 0.9);
-            (
-                if hovered {
-                    color::mix(face, color::TEXT, 0.2)
-                } else {
-                    face
-                },
-                false,
-            )
-        }
+        Keys::Lighting { .. } => (lit_face(info, keys), false),
         Keys::Keymap { selected, .. } => (
-            if hovered { color::HOVER } else { color::RAISED },
+            color::mix(color::RAISED, color::HOVER, hovered),
             *selected == Some(index),
         ),
         Keys::Device => (color::RAISED, false),
     };
+    // A pressed key glows up at once and fades out after release.
+    let glow = pen.anim.towards(
+        Key::Down(index),
+        if down { 1.0 } else { 0.0 },
+        rate::PRESS,
+        rate::RELEASE,
+    );
+    let face = if matches!(keys, Keys::Device) {
+        color::mix(face, color::PRESSED, glow * 0.55)
+    } else {
+        face
+    };
+    // Pressed caps sink a little.
+    let sink = pen.s(1.5) * glow;
+    let cap = Area::new(cap.x, cap.y + sink, cap.w, cap.h - sink);
     // A darker skirt under the face gives the cap some depth.
     pen.round(cap, radius, color::mix(face, color::BACKGROUND, 0.45))?;
     let top = Area::new(
         cap.x + pen.s(2.0),
         cap.y + pen.s(1.0),
         cap.w - pen.s(4.0),
-        cap.h - pen.s(5.0),
+        cap.h - pen.s(5.0) + sink,
     );
     pen.round(top, radius * 0.8, face)?;
-    if down {
-        pen.outline(cap, radius, pen.s(2.0), color::PRESSED)?;
+    if glow > 0.01 {
+        pen.outline(
+            cap,
+            radius,
+            pen.s(2.0),
+            color::mix(face, color::PRESSED, glow),
+        )?;
     }
-    if selected {
-        pen.outline(cap, radius, pen.s(2.5), color::ACCENT)?;
+    let sel = pen.anim.to(
+        Key::Selected(index),
+        if selected { 1.0 } else { 0.0 },
+        rate::HOVER,
+    );
+    if sel > 0.01 {
+        pen.outline(
+            cap,
+            radius,
+            pen.s(1.0) + pen.s(1.5) * sel,
+            color::mix(face, color::ACCENT, sel),
+        )?;
     }
     let label = top.inset(pen.s(3.0));
     match keys {
@@ -444,6 +491,41 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
     }
 }
 
+/// A key's face in the lighting preview; the per-key brush shows on the
+/// hovered key.
+fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
+    let Keys::Lighting {
+        settings,
+        time,
+        colors,
+        points,
+        presses,
+        brush,
+    } = keys
+    else {
+        return color::RAISED;
+    };
+    let lit = if settings.effect == Effect::PerKey {
+        info.led
+            .and_then(|l| colors.get(usize::from(l)).copied())
+            .unwrap_or(Rgb::OFF)
+            .scale(settings.color.v)
+    } else {
+        points
+            .get(info.index)
+            .copied()
+            .flatten()
+            .map_or(Rgb::OFF, |p| {
+                lights::preview(*settings, p, info.index, *time, presses, points)
+            })
+    };
+    let face = color::mix(color::SURFACE, lights::rgb(lit), 0.9);
+    match brush {
+        Some(b) if info.led.is_some() => color::mix(face, lights::rgb(*b), info.hovered * 0.6),
+        _ => color::mix(face, color::TEXT, info.hovered * 0.15),
+    }
+}
+
 /// Left, top, right and bottom of the keys with geometry, in units.
 fn bounds(desc: &Description) -> Option<(f64, f64, f64, f64)> {
     let mut b: Option<(f64, f64, f64, f64)> = None;
@@ -454,46 +536,8 @@ fn bounds(desc: &Description) -> Option<(f64, f64, f64, f64)> {
     b
 }
 
-/// What a key shows in the lighting preview; follows the firmware's
-/// effects closely enough to judge settings by. `own` is the key's
-/// per-key colour.
-fn preview(s: Settings, x: f32, t: f32, down: bool, own: Option<Rgb>) -> Color {
-    if s.effect == Effect::PerKey {
-        let c = own.unwrap_or(Rgb::OFF).scale(s.color.v);
-        return Color::rgb(c.r, c.g, c.b);
-    }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let phase = (t * 1000.0 * (f32::from(s.speed) + 16.0) / 1024.0) as u32;
-    let base = s.color;
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let hsv = match s.effect {
-        Effect::Off | Effect::PerKey => Hsv::new(0, 0, 0),
-        Effect::Reactive if down => Hsv::new(base.h.wrapping_add(128), base.s, 255),
-        Effect::Solid | Effect::Reactive => base,
-        Effect::Breathing => {
-            let p = phase % 512;
-            let tri = if p < 256 { p } else { 511 - p };
-            Hsv::new(
-                base.h,
-                base.s,
-                (u32::from(base.v) * (tri * tri / 255) / 255) as u8,
-            )
-        }
-        Effect::Cycle => Hsv::new(base.h.wrapping_add((phase / 2) as u8), base.s, base.v),
-        Effect::Wave => Hsv::new(
-            base.h
-                .wrapping_add((x * 255.0) as u8)
-                .wrapping_sub((phase / 2) as u8),
-            base.s,
-            base.v,
-        ),
-    };
-    let rgb = hsv.to_rgb();
-    Color::rgb(rgb.r, rgb.g, rgb.b)
-}
-
 /// Pills in a row; returns the right edge.
-fn pills(
+pub fn pills(
     pen: &mut Pen<'_>,
     x: f32,
     y: f32,
@@ -505,12 +549,11 @@ fn pills(
     for (label, hit, active) in items {
         let w = pen.width(label, &font) + pen.s(24.0);
         let a = Area::new(x, y, w, pen.s(30.0));
+        let hover = pen.hover(a, *hit);
         let bg = if *active {
             color::ACCENT
-        } else if pen.hovered(a) {
-            color::HOVER
         } else {
-            color::RAISED
+            color::mix(color::RAISED, color::HOVER, hover)
         };
         pen.round(a, pen.s(15.0), bg)?;
         let fg = if *active {
@@ -525,7 +568,7 @@ fn pills(
     Ok(x)
 }
 
-fn label(pen: &mut Pen<'_>, text: &str, x: f32, y: f32) -> AureaResult<()> {
+pub fn label(pen: &mut Pen<'_>, text: &str, x: f32, y: f32) -> AureaResult<()> {
     pen.text(text, x, y, &pen.bold(11.0), color::FAINT)
 }
 
@@ -749,12 +792,14 @@ fn small_pills(
             break;
         }
         let a = Area::new(x, y, w, pill_h);
+        let hover = pen.hover(a, *hit);
         let (bg, fg) = if *active {
             (color::ACCENT, color::ACCENT_TEXT)
-        } else if pen.hovered(a) {
-            (color::HOVER, color::TEXT)
         } else {
-            (color::RAISED, color::DIM)
+            (
+                color::mix(color::RAISED, color::HOVER, hover),
+                color::mix(color::DIM, color::TEXT, hover),
+            )
         };
         pen.round(a, pill_h / 2.0, bg)?;
         pen.centred(text, a, &font, fg)?;
@@ -793,12 +838,14 @@ fn layer_bar(
     let font = pen.bold(12.0);
     let rw = pen.width(reset, &font) + pen.s(24.0);
     let ra = Area::new(body.right() - rw, body.y, rw, pen.s(30.0));
+    let t = pen.hover(ra, Hit::ResetKeymap);
     let (bg, fg) = if confirm_reset {
         (color::BAD, color::ACCENT_TEXT)
-    } else if pen.hovered(ra) {
-        (color::HOVER, color::TEXT)
     } else {
-        (color::RAISED, color::DIM)
+        (
+            color::mix(color::RAISED, color::HOVER, t),
+            color::mix(color::DIM, color::TEXT, t),
+        )
     };
     pen.round(ra, pen.s(15.0), bg)?;
     pen.centred(reset, ra, &font, fg)?;
@@ -809,18 +856,19 @@ fn layer_bar(
 /// A keycap-shaped button with a main and an optional small line.
 fn chip(
     pen: &mut Pen<'_>,
-    a: Area,
+    (a, hit): (Area, Hit),
     main: &str,
     sub: Option<&str>,
     selected: bool,
 ) -> AureaResult<()> {
+    let t = pen.hover(a, hit);
     let face = if selected {
         color::ACCENT
-    } else if pen.hovered(a) {
-        color::HOVER
     } else {
-        color::RAISED
+        color::mix(color::RAISED, color::HOVER, t)
     };
+    // Hovered chips lift a little.
+    let a = Area::new(a.x, a.y - pen.s(1.5) * t, a.w, a.h);
     pen.round(a, pen.s(7.0), color::mix(face, color::BACKGROUND, 0.45))?;
     let top = Area::new(
         a.x + pen.s(2.0),
@@ -881,12 +929,11 @@ fn palette(
         }
         let active = i == chosen;
         let has_current = group.items.contains(&current);
+        let t = pen.hover(a, Hit::Group(i));
         let bg = if active {
             color::RAISED
-        } else if pen.hovered(a) {
-            color::mix(color::SURFACE, color::RAISED, 0.5)
         } else {
-            color::SURFACE
+            color::mix(color::SURFACE, color::RAISED, 0.5 * t)
         };
         pen.round(a, pen.s(6.0), bg)?;
         if active {
@@ -948,7 +995,13 @@ fn palette(
             break;
         }
         let a = Area::new(x, y, w, cap);
-        chip(pen, a, &main, sub.as_deref(), *b == current)?;
+        chip(
+            pen,
+            (a, Hit::Palette(*b)),
+            &main,
+            sub.as_deref(),
+            *b == current,
+        )?;
         hits.push((a, Hit::Palette(*b)));
         x += w + gap;
     }
@@ -977,12 +1030,11 @@ fn macro_list(
             break;
         }
         let active = i == chosen;
+        let t = pen.hover(a, Hit::Macro(i));
         let bg = if active {
             color::RAISED
-        } else if pen.hovered(a) {
-            color::mix(color::SURFACE, color::RAISED, 0.5)
         } else {
-            color::SURFACE
+            color::mix(color::SURFACE, color::RAISED, 0.5 * t)
         };
         pen.round(a, pen.s(8.0), bg)?;
         pen.text(
@@ -1164,221 +1216,6 @@ fn macros_tab(
     })
 }
 
-fn lighting_tab(
-    pen: &mut Pen<'_>,
-    body: Area,
-    shared: &mut Shared,
-    hits: &mut Hits,
-) -> AureaResult<String> {
-    let lang = pen.lang;
-    let Some(settings) = shared.lighting() else {
-        pen.centred(
-            lang.tr("This keyboard has no lighting"),
-            body,
-            &pen.font(15.0),
-            color::DIM,
-        )?;
-        return Ok(String::new());
-    };
-    let kb = &shared.keyboard;
-    let info = kb.lighting;
-    let kb_area = Area::new(body.x, body.y + pen.s(8.0), body.w, body.h * 0.44);
-    let used = keyboard(
-        pen,
-        kb_area,
-        kb,
-        &Keys::Lighting {
-            settings,
-            time: shared.ui.time,
-            colors: &kb.key_colors,
-        },
-        settings.effect == Effect::PerKey,
-        hits,
-    )?;
-
-    let panel = Area::new(
-        body.x,
-        used.bottom() + pen.s(20.0),
-        body.w,
-        body.bottom() - used.bottom() - pen.s(20.0),
-    );
-    pen.round(panel, pen.s(12.0), color::SURFACE)?;
-    let x = panel.x + pen.s(20.0);
-    let mut y = panel.y + pen.s(16.0);
-
-    label(pen, lang.tr("WHO CONTROLS THE LIGHTS"), x, y)?;
-    y += pen.s(18.0);
-    let modes = [
-        (
-            lang.tr("Keyboard effects").to_string(),
-            Hit::OsLighting(false),
-            !settings.os_lighting,
-        ),
-        (
-            lang.tr("Windows Dynamic Lighting").to_string(),
-            Hit::OsLighting(true),
-            settings.os_lighting,
-        ),
-    ];
-    let end = pills(pen, x, y, &modes, hits)?;
-    let note = if settings.os_lighting {
-        lang.tr("Windows may take the LEDs (Settings > Personalization > Dynamic Lighting). The effect runs while it does not.")
-    } else {
-        lang.tr("The keyboard runs its own effect; Windows is ignored.")
-    };
-    let note_area = Area::new(
-        end + pen.s(8.0),
-        y + pen.s(7.0),
-        panel.right() - end - pen.s(28.0),
-        pen.s(16.0),
-    );
-    pen.fitted_left(note, note_area, 11.0, 8.0, color::DIM)?;
-    y += pen.s(46.0);
-
-    label(pen, lang.tr("EFFECT"), x, y)?;
-    y += pen.s(18.0);
-    let effects: Vec<_> = Effect::ALL
-        .into_iter()
-        .map(|e| {
-            (
-                lang.tr(effect_name(e)).to_string(),
-                Hit::Effect(e),
-                e == settings.effect,
-            )
-        })
-        .collect();
-    let end = pills(pen, x, y, &effects, hits)?;
-    if settings.effect == Effect::PerKey {
-        paint_bar(pen, end + pen.s(12.0), y, shared.brush(), hits)?;
-    }
-    y += pen.s(46.0);
-
-    sliders(
-        pen,
-        Area::new(x, y, panel.w - pen.s(40.0), panel.bottom() - y),
-        settings,
-        hits,
-    )?;
-
-    Ok(match info {
-        Some(i) if !i.drivers_ok => lang
-            .tr("The LED driver chips do not answer; the keyboard keeps trying.")
-            .into(),
-        Some(i) if i.host => lang
-            .tr("An app or Windows is setting the colours right now.")
-            .into(),
-        Some(i) => lang.fill(
-            "{} LEDs. Settings are saved on the keyboard.",
-            &[&i.leds.to_string()],
-        ),
-        None => String::new(),
-    })
-}
-
-/// Hue, saturation, brightness and speed, two per row.
-fn sliders(pen: &mut Pen<'_>, area: Area, settings: Settings, hits: &mut Hits) -> AureaResult<()> {
-    let lang = pen.lang;
-    let (x, y) = (area.x, area.y);
-    let track_w = (area.w - pen.s(24.0)) / 2.0;
-    let c = settings.color;
-    let sliders = [
-        ("HUE", Slider::Hue, c.h),
-        ("SATURATION", Slider::Saturation, c.s),
-        ("BRIGHTNESS", Slider::Brightness, c.v),
-        ("SPEED", Slider::Speed, settings.speed),
-    ];
-    for (i, (name, slider, value)) in sliders.into_iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let (sx, sy) = (
-            x + (i % 2) as f32 * (track_w + pen.s(24.0)),
-            y + (i / 2) as f32 * pen.s(48.0),
-        );
-        if sy + pen.s(40.0) > area.bottom() {
-            break;
-        }
-        label(pen, lang.tr(name), sx, sy)?;
-        let pct = format!("{}%", u32::from(value) * 100 / 255);
-        let font = pen.font(11.0);
-        let vw = pen.width(&pct, &font);
-        pen.text(&pct, sx + track_w - vw, sy, &font, color::DIM)?;
-        let track = Area::new(sx, sy + pen.s(20.0), track_w, pen.s(12.0));
-        slider_track(pen, track, slider, settings)?;
-        let knob = track.x + track.w * f32::from(value) / 255.0;
-        pen.circle(knob, track.y + track.h / 2.0, pen.s(9.0), color::TEXT)?;
-        pen.circle(knob, track.y + track.h / 2.0, pen.s(6.0), color::BACKGROUND)?;
-        // A taller grab area than the track.
-        hits.push((
-            Area::new(
-                track.x - pen.s(8.0),
-                track.y - pen.s(10.0),
-                track.w + pen.s(16.0),
-                track.h + pen.s(20.0),
-            ),
-            Hit::Slider(slider),
-        ));
-    }
-
-    Ok(())
-}
-
-/// The brush colour and "paint all".
-fn paint_bar(pen: &mut Pen<'_>, x: f32, y: f32, brush: Rgb, hits: &mut Hits) -> AureaResult<()> {
-    let lang = pen.lang;
-    let swatch = Area::new(x, y + pen.s(3.0), pen.s(24.0), pen.s(24.0));
-    pen.round(swatch, pen.s(12.0), Color::rgb(brush.r, brush.g, brush.b))?;
-    pen.outline(swatch, pen.s(12.0), pen.s(1.5), color::BORDER)?;
-    let items = [(lang.tr("Paint all").to_string(), Hit::PaintAll, false)];
-    let end = pills(pen, swatch.right() + pen.s(8.0), y, &items, hits)?;
-    let note = Area::new(end + pen.s(4.0), y + pen.s(7.0), pen.s(320.0), pen.s(16.0));
-    pen.fitted_left(
-        lang.tr("Hue and saturation pick the brush. Click or drag over keys."),
-        note,
-        11.0,
-        8.0,
-        color::DIM,
-    )
-}
-
-/// An effect's name as shown.
-const fn effect_name(e: Effect) -> &'static str {
-    match e {
-        Effect::Off => "Off",
-        Effect::Solid => "Solid",
-        Effect::Breathing => "Breathing",
-        Effect::Cycle => "Cycle",
-        Effect::Wave => "Wave",
-        Effect::Reactive => "Reactive",
-        Effect::PerKey => "Per-key",
-    }
-}
-
-/// The track shows what the slider changes.
-fn slider_track(pen: &mut Pen<'_>, track: Area, slider: Slider, s: Settings) -> AureaResult<()> {
-    const STEPS: u8 = 32;
-    pen.round(track, track.h / 2.0, color::RAISED)?;
-    let inner = track.inset(pen.s(2.0));
-    for i in 0..STEPS {
-        #[allow(clippy::cast_possible_truncation)]
-        let v = (u32::from(i) * 255 / u32::from(STEPS - 1)) as u8;
-        let hsv = match slider {
-            Slider::Hue => Hsv::new(v, 255, 255),
-            Slider::Saturation => Hsv::new(s.color.h, v, 255),
-            Slider::Brightness => Hsv::new(s.color.h, s.color.s, v),
-            Slider::Speed => Hsv::new(0, 0, 60 + v / 3),
-        };
-        let rgb = hsv.to_rgb();
-        let seg_w = inner.w / f32::from(STEPS);
-        let seg = Area::new(
-            inner.x + seg_w * f32::from(i),
-            inner.y,
-            seg_w + 1.0,
-            inner.h,
-        );
-        pen.fill(seg, Color::rgb(rgb.r, rgb.g, rgb.b))?;
-    }
-    Ok(())
-}
-
 fn device_tab(
     pen: &mut Pen<'_>,
     body: Area,
@@ -1482,29 +1319,5 @@ mod tests {
         assert_eq!(group(12), "12");
         assert_eq!(uptime(61_000), "1m 01s");
         assert_eq!(uptime(3_725_000), "1h 02m");
-    }
-
-    #[test]
-    fn preview_follows_the_effect() {
-        let s = Settings {
-            effect: Effect::Off,
-            ..Settings::DEFAULT
-        };
-        assert_eq!(preview(s, 0.0, 0.0, false, None), Color::rgb(0, 0, 0));
-        let solid = Settings {
-            effect: Effect::Solid,
-            color: Hsv::new(0, 255, 255),
-            ..Settings::DEFAULT
-        };
-        assert_eq!(preview(solid, 0.3, 5.0, false, None), Color::rgb(255, 0, 0));
-        let own = Settings {
-            effect: Effect::PerKey,
-            color: Hsv::new(0, 0, 255),
-            ..Settings::DEFAULT
-        };
-        assert_eq!(
-            preview(own, 0.0, 0.0, false, Some(Rgb::new(1, 2, 3))),
-            Color::rgb(1, 2, 3)
-        );
     }
 }

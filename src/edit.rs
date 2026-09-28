@@ -6,7 +6,7 @@ use lykil::keycode::{KeyCode, Modifiers};
 use lykil::layer::LayerId;
 
 /// What a dual-role key does while held.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Hold {
     /// Not dual-role: the key only taps.
     Nothing,
