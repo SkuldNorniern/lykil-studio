@@ -143,6 +143,7 @@ pub fn keycap(b: Binding, layers: &[String]) -> (String, Option<String>) {
         ),
         Binding::OneShot(OneShotTarget::Modifiers(m)) => (mods(m), Some("one-shot".into())),
         Binding::OneShot(OneShotTarget::Layer(l)) => (layer(l, layers), Some("one-shot".into())),
+        Binding::Macro(id) => (format!("M{}", id.0), Some("macro".into())),
         Binding::OneShotSwitch(s) => (
             match s {
                 Switch::On => "OS on",
@@ -175,8 +176,9 @@ fn keys(range: impl IntoIterator<Item = u8>) -> Vec<Binding> {
         .collect()
 }
 
-/// Everything the palette offers, for a keymap with `layers`.
-pub fn palette(layers: &[String]) -> Vec<Group> {
+/// Everything the palette offers, for a keymap with `layers`; `macros`
+/// when the keyboard has them.
+pub fn palette(layers: &[String], macros: bool) -> Vec<Group> {
     let n = u8::try_from(layers.len()).unwrap_or(u8::MAX);
     let consumer = [
         0xE2, 0xEA, 0xE9, 0xCD, 0xB6, 0xB5, 0xB7, 0x70, 0x6F, 0x192, 0x194, 0x18A, 0x221, 0x223,
@@ -237,10 +239,20 @@ pub fn palette(layers: &[String]) -> Vec<Group> {
                 .collect(),
         },
         Group {
+            name: "Macros",
+            items: (0..if macros { lykil::macros::MACROS } else { 0 })
+                .filter_map(|m| u8::try_from(m).ok())
+                .map(|m| Binding::Macro(lykil::macros::MacroId(m)))
+                .collect(),
+        },
+        Group {
             name: "Special",
             items: vec![Binding::Transparent, Binding::None],
         },
     ]
+    .into_iter()
+    .filter(|g| !g.items.is_empty())
+    .collect()
 }
 
 #[cfg(test)]
@@ -273,7 +285,7 @@ mod tests {
     #[test]
     fn palette_has_every_letter_and_layer() {
         let layers = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-        let p = palette(&layers);
+        let p = palette(&layers, true);
         assert_eq!(p[0].items.len(), 26);
         assert_eq!(
             p.iter()

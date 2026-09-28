@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use aurea::render::{CanvasId, request_canvas_redraw};
 use lykil::binding::Binding;
 use lykil::lighting::{Rgb, Settings};
+use lykil::macros::{MACROS, Step};
 use lykil_device::{Device, DeviceError};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp::{Diagnostics, Hello, LightingInfo, capability};
@@ -41,6 +42,8 @@ pub struct Keyboard {
     pub lighting: Option<LightingInfo>,
     /// Colours of the per-key effect, by LED.
     pub key_colors: Vec<Rgb>,
+    /// Every macro's steps, by id.
+    pub macros: Vec<Vec<Step>>,
     /// The last change the keyboard refused, for the status line.
     pub error: Option<String>,
 }
@@ -85,6 +88,10 @@ pub enum Command {
     SetKeyColors {
         start: u16,
         colors: Vec<Rgb>,
+    },
+    SetMacro {
+        id: u8,
+        steps: Vec<Step>,
     },
 }
 
@@ -140,9 +147,16 @@ fn poll(
             Some(info) => device.key_colors(info.leds)?,
             None => Vec::new(),
         };
-        Ok((description, keymap, lighting, key_colors))
+        let macros = if hello.capabilities & capability::MACROS != 0 {
+            (0..MACROS)
+                .map(|id| device.macro_steps(u8::try_from(id).unwrap_or(u8::MAX)))
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            Vec::new()
+        };
+        Ok((description, keymap, lighting, key_colors, macros))
     })();
-    let (description, keymap, lighting, key_colors) = match loaded {
+    let (description, keymap, lighting, key_colors, macros) = match loaded {
         Ok(l) => l,
         Err(e) => return e.to_string(),
     };
@@ -155,6 +169,7 @@ fn poll(
             keymap,
             lighting,
             key_colors,
+            macros,
             ..Keyboard::default()
         };
     });
@@ -216,6 +231,13 @@ fn commands(
                 });
             }),
             Command::SetKeyColors { start, colors } => device.set_key_colors(start, &colors),
+            Command::SetMacro { id, steps } => device.set_macro(id, &steps).map(|()| {
+                update(shared, canvas, |k| {
+                    if let Some(slot) = k.macros.get_mut(usize::from(id)) {
+                        *slot = steps;
+                    }
+                });
+            }),
             Command::ResetKeymap => device.reset_keymap().and_then(|()| {
                 let keymap = (0..device.hello().layers)
                     .map(|l| device.layer(l))

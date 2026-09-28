@@ -52,6 +52,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
     let status = if shared.keyboard.connection == Connection::Connected {
         match shared.ui.tab {
             Tab::Keymap => keymap_tab(&mut pen, body, shared, &mut hits)?,
+            Tab::Macros => macros_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Lighting => lighting_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Device => device_tab(&mut pen, body, shared, &mut hits)?,
         }
@@ -84,9 +85,10 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     pen.text(name, x, pen.s(28.0), &pen.bold(17.0), color::TEXT)?;
 
     // Tabs, centred.
-    let tab_w = pen.s(104.0);
+    let tab_w = pen.s(100.0);
     let tab_h = pen.s(34.0);
-    let total = tab_w * 3.0 + pen.s(8.0);
+    #[allow(clippy::cast_precision_loss)]
+    let total = tab_w * Tab::ALL.len() as f32 + pen.s(8.0);
     let bar = Area::new((w - total) / 2.0, pen.s(13.0), total, tab_h + pen.s(8.0));
     pen.round(bar, pen.s(10.0), color::BACKGROUND)?;
     for (i, tab) in Tab::ALL.into_iter().enumerate() {
@@ -551,7 +553,14 @@ fn keymap_tab(
         panel.right() - left.right() - pen.s(44.0),
         panel.h - pen.s(36.0),
     );
-    palette(pen, right, &layers, current, ui.group, hits)?;
+    palette(
+        pen,
+        right,
+        &layers,
+        current,
+        (ui.group, !kb.macros.is_empty()),
+        hits,
+    )?;
     Ok(format!(
         "Editing {} on {layer_name}. A pick moves on to the next key. Esc to stop.",
         info.id
@@ -741,10 +750,10 @@ fn palette(
     area: Area,
     layers: &[String],
     current: Binding,
-    chosen: usize,
+    (chosen, macros): (usize, bool),
     hits: &mut Hits,
 ) -> AureaResult<()> {
-    let groups = legend::palette(layers);
+    let groups = legend::palette(layers, macros);
     let list_w = pen.s(150.0);
     #[allow(clippy::cast_precision_loss)]
     let row_h = pen.s(24.0).min(area.h / groups.len().max(1) as f32);
@@ -828,6 +837,193 @@ fn palette(
         x += w + gap;
     }
     Ok(())
+}
+
+/// Every macro slot with what it types.
+fn macro_list(
+    pen: &mut Pen<'_>,
+    list: Area,
+    macros: &[Vec<lykil::macros::Step>],
+    chosen: usize,
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let row_h = pen.s(40.0);
+    for (i, steps) in macros.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = Area::new(
+            list.x + pen.s(8.0),
+            list.y + pen.s(8.0) + row_h * i as f32,
+            list.w - pen.s(16.0),
+            row_h - pen.s(4.0),
+        );
+        if a.bottom() > list.bottom() {
+            break;
+        }
+        let active = i == chosen;
+        let bg = if active {
+            color::RAISED
+        } else if pen.hovered(a) {
+            color::mix(color::SURFACE, color::RAISED, 0.5)
+        } else {
+            color::SURFACE
+        };
+        pen.round(a, pen.s(8.0), bg)?;
+        pen.text(
+            &format!("M{i}"),
+            a.x + pen.s(12.0),
+            a.y + pen.s(10.0),
+            &pen.bold(13.0),
+            color::ACCENT,
+        )?;
+        let preview = match lykil_config::text::text(steps) {
+            _ if steps.is_empty() => "empty".to_string(),
+            Some(t) => format!("\"{}\"", t.replace('\n', "\u{21b5}")),
+            None if steps.len() == 1 => "1 step".to_string(),
+            None => format!("{} steps", steps.len()),
+        };
+        let c = if steps.is_empty() {
+            color::FAINT
+        } else {
+            color::DIM
+        };
+        let p = Area::new(a.x + pen.s(52.0), a.y, a.w - pen.s(60.0), a.h);
+        pen.fitted_left(&preview, p, 12.0, 8.0, c)?;
+        hits.push((a, Hit::Macro(i)));
+    }
+
+    Ok(())
+}
+
+/// Multi-line text in `field`, with a caret at the end while editing.
+fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> AureaResult<()> {
+    let font = pen.font(15.0);
+    let mut ty = field.y + pen.s(12.0);
+    let lines: Vec<&str> = text.split('\n').collect();
+    for (n, line) in lines.iter().enumerate() {
+        let shown = if editing && n + 1 == lines.len() {
+            format!("{line}|")
+        } else {
+            (*line).to_string()
+        };
+        pen.text(&shown, field.x + pen.s(12.0), ty, &font, color::TEXT)?;
+        ty += pen.s(22.0);
+        if ty > field.bottom() - pen.s(20.0) {
+            break;
+        }
+    }
+    if text.is_empty() && !editing {
+        pen.text(
+            "Start typing: this macro will type the same text.",
+            field.x + pen.s(12.0),
+            field.y + pen.s(12.0),
+            &font,
+            color::FAINT,
+        )?;
+    }
+    Ok(())
+}
+
+/// Macro slots on the left, the chosen macro's text on the right.
+fn macros_tab(
+    pen: &mut Pen<'_>,
+    body: Area,
+    shared: &mut Shared,
+    hits: &mut Hits,
+) -> AureaResult<String> {
+    let kb = &shared.keyboard;
+    let ui = &shared.ui;
+    if kb.macros.is_empty() {
+        pen.centred(
+            "This keyboard's firmware has no macros yet",
+            body,
+            &pen.font(15.0),
+            color::DIM,
+        )?;
+        return Ok(String::new());
+    }
+    let list = Area::new(
+        body.x,
+        body.y + pen.s(8.0),
+        pen.s(300.0),
+        body.h - pen.s(8.0),
+    );
+    pen.round(list, pen.s(12.0), color::SURFACE)?;
+    macro_list(pen, list, &kb.macros, ui.macro_id, hits)?;
+
+    let editor = Area::new(
+        list.right() + pen.s(20.0),
+        list.y,
+        body.right() - list.right() - pen.s(20.0),
+        pen.s(300.0),
+    );
+    pen.round(editor, pen.s(12.0), color::SURFACE)?;
+    let x = editor.x + pen.s(20.0);
+    let id = ui.macro_id;
+    pen.text(
+        &format!("Macro M{id}"),
+        x,
+        editor.y + pen.s(18.0),
+        &pen.bold(17.0),
+        color::TEXT,
+    )?;
+    let saved = kb.macros.get(id).cloned().unwrap_or_default();
+    let editing = ui.macro_text.is_some();
+    let text = ui
+        .macro_text
+        .clone()
+        .or_else(|| lykil_config::text::text(&saved))
+        .unwrap_or_default();
+    label(pen, "TYPES", x, editor.y + pen.s(54.0))?;
+    let field = Area::new(
+        x,
+        editor.y + pen.s(72.0),
+        editor.w - pen.s(40.0),
+        pen.s(110.0),
+    );
+    pen.round(field, pen.s(8.0), color::BACKGROUND)?;
+    if editing {
+        pen.outline(field, pen.s(8.0), pen.s(1.5), color::ACCENT)?;
+    }
+    text_field(pen, field, &text, editing)?;
+    let steps = lykil_config::text::steps(&text).map_or(0, |s| s.len());
+    let full = steps > lykil::macros::MACRO_STEPS;
+    let count = format!("{steps} / {} steps", lykil::macros::MACRO_STEPS);
+    let cf = pen.font(11.0);
+    let cw = pen.width(&count, &cf);
+    pen.text(
+        &count,
+        field.right() - cw,
+        field.bottom() + pen.s(8.0),
+        &cf,
+        if full { color::BAD } else { color::FAINT },
+    )?;
+    let y = field.bottom() + pen.s(30.0);
+    let mut buttons = Vec::new();
+    if editing && !full {
+        buttons.push(("Save to keyboard".to_string(), Hit::SaveMacro, true));
+    }
+    if !saved.is_empty() {
+        buttons.push(("Clear".to_string(), Hit::ClearMacro, false));
+    }
+    pills(pen, x, y, &buttons, hits)?;
+    let note = Area::new(
+        editor.x,
+        editor.bottom() + pen.s(16.0),
+        editor.w,
+        pen.s(18.0),
+    );
+    pen.fitted_left(
+        &format!("Bind it on the keymap page: Macros group, M{id}. Typed as a US layout."),
+        note,
+        12.0,
+        8.0,
+        color::DIM,
+    )?;
+    Ok(if editing {
+        "Typing into the macro. Save sends it to the keyboard; Esc throws it away.".into()
+    } else {
+        "Pick a macro and type. Letters, digits, symbols, space, Enter and Tab.".into()
+    })
 }
 
 fn lighting_tab(

@@ -27,16 +27,18 @@ pub struct Shared {
 pub enum Tab {
     #[default]
     Keymap,
+    Macros,
     Lighting,
     Device,
 }
 
 impl Tab {
-    pub const ALL: [Self; 3] = [Self::Keymap, Self::Lighting, Self::Device];
+    pub const ALL: [Self; 4] = [Self::Keymap, Self::Macros, Self::Lighting, Self::Device];
 
     pub const fn name(self) -> &'static str {
         match self {
             Self::Keymap => "Keymap",
+            Self::Macros => "Macros",
             Self::Lighting => "Lighting",
             Self::Device => "Device",
         }
@@ -67,6 +69,10 @@ pub enum Hit {
     ResetKeymap,
     /// Every key the brush colour.
     PaintAll,
+    /// A macro slot.
+    Macro(usize),
+    SaveMacro,
+    ClearMacro,
     Effect(Effect),
     Slider(Slider),
     OsLighting(bool),
@@ -80,6 +86,10 @@ pub struct Ui {
     pub selected: Option<usize>,
     /// The palette group shown.
     pub group: usize,
+    /// The macro shown on the macros page.
+    pub macro_id: usize,
+    /// Text being typed for that macro, until saved.
+    pub macro_text: Option<String>,
     pub mouse: (f32, f32),
     /// What the last frame drew that reacts to the mouse, back to front.
     pub hits: Vec<(Area, Hit)>,
@@ -178,7 +188,34 @@ impl Shared {
             } => {
                 self.ui.selected = None;
                 self.ui.confirm_reset = false;
+                self.ui.macro_text = None;
                 true
+            }
+            WindowEvent::KeyInput {
+                key: KeyCode::Backspace,
+                pressed: true,
+                ..
+            } if self.ui.tab == Tab::Macros => {
+                self.macro_text().pop();
+                true
+            }
+            WindowEvent::KeyInput {
+                key: KeyCode::Enter,
+                pressed: true,
+                ..
+            } if self.ui.tab == Tab::Macros => {
+                self.macro_text().push('\n');
+                true
+            }
+            WindowEvent::TextInput { ref text } if self.ui.tab == Tab::Macros => {
+                let typable: String = text
+                    .chars()
+                    .filter(|c| {
+                        !c.is_control() && lykil_config::text::steps(&c.to_string()).is_ok()
+                    })
+                    .collect();
+                self.macro_text().push_str(&typable);
+                !typable.is_empty()
             }
             WindowEvent::MouseExited => {
                 self.ui.mouse = (-1.0, -1.0);
@@ -202,6 +239,21 @@ impl Shared {
             Hit::Key(k) if self.ui.tab == Tab::Lighting => {
                 self.ui.painting = true;
                 self.paint(k, tx);
+            }
+            Hit::Macro(id) => {
+                self.ui.macro_id = id;
+                self.ui.macro_text = None;
+            }
+            Hit::SaveMacro => {
+                if let Some(text) = self.ui.macro_text.take()
+                    && let Ok(steps) = lykil_config::text::steps(&text)
+                {
+                    self.send_macro(steps, tx);
+                }
+            }
+            Hit::ClearMacro => {
+                self.ui.macro_text = None;
+                self.send_macro(Vec::new(), tx);
             }
             Hit::PaintAll => {
                 let color = self.brush();
@@ -302,6 +354,38 @@ impl Shared {
                 .map_or(0, |d| d.keys.len());
             self.ui.selected = (key + 1 < keys).then_some(key + 1);
         }
+    }
+
+    /// The text being edited for the shown macro, starting from what the
+    /// macro types now.
+    pub fn macro_text(&mut self) -> &mut String {
+        let id = self.ui.macro_id;
+        let current = self
+            .keyboard
+            .macros
+            .get(id)
+            .and_then(|s| lykil_config::text::text(s))
+            .unwrap_or_default();
+        self.ui.macro_text.get_or_insert(current)
+    }
+
+    fn send_macro(&mut self, steps: Vec<lykil::macros::Step>, tx: &Sender<Command>) {
+        let id = self.ui.macro_id;
+        if steps.len() > lykil::macros::MACRO_STEPS {
+            self.keyboard.error = Some(format!(
+                "too long: {} steps, a macro holds {}",
+                steps.len(),
+                lykil::macros::MACRO_STEPS
+            ));
+            return;
+        }
+        if let Some(slot) = self.keyboard.macros.get_mut(id) {
+            slot.clone_from(&steps);
+        }
+        let _ = tx.send(Command::SetMacro {
+            id: u8::try_from(id).unwrap_or(0),
+            steps,
+        });
     }
 
     /// The per-key brush: the lighting hue and saturation at full value.
