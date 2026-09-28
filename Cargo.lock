@@ -274,6 +274,15 @@ name = "lykil"
 version = "0.1.0"
 
 [[package]]
+name = "lykil-config"
+version = "0.1.0"
+dependencies = [
+ "lykil",
+ "lykil-protocol",
+ "tavra",
+]
+
+[[package]]
 name = "lykil-device"
 version = "0.1.0"
 dependencies = [
@@ -294,6 +303,8 @@ name = "lykil-studio"
 version = "0.1.0"
 dependencies = [
  "aurea",
+ "lykil",
+ "lykil-config",
  "lykil-device",
  "lykil-protocol",
 ]
@@ -423,6 +434,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "tavra"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3a16482bef7aee4ee9dca7ac786952efcef5d754c54eb501803faa11deecabf"
 
 [[package]]
 name = "thiserror"
