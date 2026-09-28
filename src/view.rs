@@ -1238,6 +1238,14 @@ fn device_tab(
         cards.push(("MATRIX", format!("{} x {}", h.matrix_rows, h.matrix_cols)));
         cards.push(("PROTOCOL", format!("LCP {}", h.version)));
     }
+    match &kb.firmware {
+        Some(fw) => {
+            cards.push(("FIRMWARE", format!("{} {}", fw.name, fw.version)));
+            cards.push(("LYKIL", fw.lykil.to_string()));
+            cards.push(("CHIP ID", fw.id.clone()));
+        }
+        None => cards.push(("FIRMWARE", lang.tr("too old to say").to_string())),
+    }
     if let Some(d) = &kb.diagnostics {
         cards.push(("UPTIME", uptime(d.uptime_ms)));
         cards.push(("SCANS", group(d.scans)));

@@ -15,7 +15,7 @@ use aurea::render::{CanvasId, request_canvas_redraw};
 use lykil::binding::Binding;
 use lykil::lighting::{Rgb, Settings};
 use lykil::macros::{MACROS, Step};
-use lykil_device::{Device, DeviceError};
+use lykil_device::{Device, DeviceError, FirmwareInfo};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp::{Diagnostics, Hello, LightingInfo, capability};
 
@@ -32,6 +32,8 @@ pub struct Keyboard {
     pub connection: Connection,
     pub name: String,
     pub hello: Option<Hello>,
+    /// What firmware runs; `None` for firmware too old to say.
+    pub firmware: Option<FirmwareInfo>,
     /// What the keyboard says about itself: keys, layers, geometry.
     pub description: Option<Description>,
     pub diagnostics: Option<Diagnostics>,
@@ -133,6 +135,13 @@ fn poll(
     canvas: CanvasId,
 ) -> String {
     let hello = *device.hello();
+    // Only a lost connection matters here; a refused query just leaves
+    // the firmware unknown.
+    let firmware = match device.firmware() {
+        Ok(f) => f,
+        Err(DeviceError::Status(_) | DeviceError::Protocol(_)) => None,
+        Err(e) => return e.to_string(),
+    };
     let loaded = (|| -> Result<_, DeviceError> {
         let description = device.describe()?;
         let keymap = (0..hello.layers)
@@ -167,6 +176,7 @@ fn poll(
             // as the product string.
             name: description.name.clone(),
             hello: Some(hello),
+            firmware,
             description: Some(description),
             keymap,
             lighting,
