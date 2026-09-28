@@ -150,8 +150,8 @@ pub struct Presses {
     heat: Vec<(f32, f32)>,
 }
 
-/// Heat one press adds, as the firmware's 12000 of 65535.
-const HEAT_PER_PRESS: f32 = 12_000.0 / 65_535.0;
+/// Heat one press adds, as the firmware's 22000 of 65535.
+const HEAT_PER_PRESS: f32 = 22_000.0 / 65_535.0;
 
 impl Presses {
     pub fn press(&mut self, key: usize, time: f32) {
@@ -171,10 +171,10 @@ impl Presses {
         self.recent.push_back((key, time));
     }
 
-    /// Key `key`'s heat at `time`, cooling as the firmware does: about 4 s
+    /// Key `key`'s heat at `time`, cooling as the firmware does: about 10 s
     /// from hot to cold at speed 128.
     pub fn heat_at(&self, key: usize, time: f32, speed: u8) -> f32 {
-        let per_second = (f32::from(speed) + 16.0) / 9.0 * 1000.0 / 65_535.0;
+        let per_second = (f32::from(speed) + 16.0) / 22.0 * 1000.0 / 65_535.0;
         self.heat
             .get(key)
             .map_or(0.0, |(h, at)| (h - (time - at) * per_second).max(0.0))
