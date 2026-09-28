@@ -7,6 +7,7 @@
 
 use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
@@ -246,6 +247,9 @@ pub const SWATCHES: [Rgb; 8] = [
     Rgb::new(255, 255, 255),
 ];
 
+/// How long a leave waits for an enter before it counts.
+const LEAVE: Duration = Duration::from_millis(60);
+
 /// Recent brush colours kept.
 const RECENT: usize = 8;
 
@@ -294,6 +298,8 @@ pub struct Ui {
     pub lang: crate::lang::Lang,
     /// A message from Studio itself for the footer, until the next click.
     pub notice: Option<String>,
+    /// When the mouse seemed to leave the window.
+    left: Option<Instant>,
 }
 
 impl Ui {
@@ -323,7 +329,18 @@ impl Shared {
 
     /// Does the page change from frame to frame by itself?
     pub fn animating(&self) -> bool {
-        (self.ui.tab == Tab::Lighting && self.lighting().is_some()) || self.ui.editing.is_some()
+        (self.ui.tab == Tab::Lighting && self.lighting().is_some())
+            || self.ui.editing.is_some()
+            || self.ui.left.is_some()
+    }
+
+    /// Takes a leave that no enter followed: the mouse is really gone.
+    pub fn settle_leave(&mut self) {
+        if self.ui.left.is_some_and(|t| t.elapsed() >= LEAVE) {
+            self.ui.left = None;
+            self.ui.mouse = (-1.0, -1.0);
+            self.ui.painting = false;
+        }
     }
 
     /// Is the picker editing the per-key brush (else the effect colour)?
@@ -400,6 +417,7 @@ impl Shared {
         }
         match *event {
             WindowEvent::MouseMove { x, y } => {
+                self.ui.left = None;
                 #[allow(clippy::cast_possible_truncation)]
                 let now = (x as f32, y as f32);
                 let before = self.ui.hovered();
@@ -464,13 +482,19 @@ impl Shared {
                 self.macro_text().push_str(&typable);
                 !typable.is_empty()
             }
+            // Aurea (git `4a5a7f8`) on Windows reports a leave and an enter
+            // around nearly every move over the canvas, so a leave only
+            // counts once no enter follows ([`Shared::settle_leave`]). A
+            // drag ends on the button release.
             WindowEvent::MouseExited => {
-                // A release outside the window never arrives.
-                self.ui.mouse = (-1.0, -1.0);
-                self.ui.drag = None;
-                self.ui.painting = false;
-                true
+                self.ui.left = Some(Instant::now());
+                false
             }
+            WindowEvent::MouseEntered => {
+                self.ui.left = None;
+                false
+            }
+            WindowEvent::MouseWheel { delta_y, .. } => self.wheel(delta_y, tx),
             WindowEvent::KeyInput {
                 key, pressed: true, ..
             } if self.ui.tab == Tab::Keymap && self.ui.selected.is_some() => {
@@ -493,6 +517,60 @@ impl Shared {
             }
             _ => false,
         }
+    }
+
+    /// The wheel nudges the slider or hue under the mouse, or steps
+    /// through tabs and layers.
+    fn wheel(&mut self, delta_y: f64, tx: &Sender<Command>) -> bool {
+        let up = delta_y > 0.0;
+        let step = |v: u8| {
+            if up {
+                v.saturating_add(4)
+            } else {
+                v.saturating_sub(4)
+            }
+        };
+        match self.ui.hovered() {
+            Some(Hit::Slider(which)) => {
+                self.change_lighting(tx, |s| match which {
+                    Slider::Brightness => s.color.v = step(s.color.v),
+                    Slider::Speed => s.speed = step(s.speed),
+                    Slider::Background => s.background = step(s.background),
+                    Slider::Size => s.size = step(s.size),
+                });
+            }
+            Some(Hit::HueBar) => {
+                let mut c = self.picked();
+                c.h = step(c.h).min(254);
+                self.pick(c, tx);
+            }
+            Some(Hit::Tab(_)) => {
+                let at = Tab::ALL.iter().position(|t| *t == self.ui.tab).unwrap_or(0);
+                let next = if up {
+                    at.checked_sub(1)
+                } else {
+                    Some(at + 1).filter(|n| *n < Tab::ALL.len())
+                };
+                if let Some(n) = next {
+                    self.ui.anim.set(Key::Page, 0.0);
+                    self.ui.tab = Tab::ALL[n];
+                }
+            }
+            Some(Hit::Layer(_)) => {
+                let layers = self.keyboard.layer_names().len();
+                let l = usize::from(self.ui.layer);
+                let next = if up {
+                    l.checked_sub(1)
+                } else {
+                    Some(l + 1).filter(|n| *n < layers)
+                };
+                if let Some(n) = next.and_then(|n| u8::try_from(n).ok()) {
+                    self.ui.layer = n;
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     fn mouse_button(&mut self, button: MouseButton, pressed: bool, tx: &Sender<Command>) -> bool {

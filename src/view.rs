@@ -36,6 +36,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         1.0
     };
     shared.settle();
+    shared.settle_leave();
     shared.follow_presses();
     // The pen holds the eased values while the pages read `shared`.
     let mut anim = std::mem::take(&mut shared.ui.anim);
