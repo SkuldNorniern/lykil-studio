@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use aurea::render::{CanvasId, request_canvas_redraw};
 use lykil::binding::Binding;
-use lykil::lighting::Settings;
+use lykil::lighting::{Rgb, Settings};
 use lykil_device::{Device, DeviceError};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp::{Diagnostics, Hello, LightingInfo, capability};
@@ -39,6 +39,8 @@ pub struct Keyboard {
     /// `keymap[layer][key]` as the keyboard has it.
     pub keymap: Vec<Vec<Binding>>,
     pub lighting: Option<LightingInfo>,
+    /// Colours of the per-key effect, by LED.
+    pub key_colors: Vec<Rgb>,
     /// The last change the keyboard refused, for the status line.
     pub error: Option<String>,
 }
@@ -70,7 +72,7 @@ pub enum Connection {
     Lost(String),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     SetBinding {
         layer: u8,
@@ -79,6 +81,11 @@ pub enum Command {
     },
     ResetKeymap,
     SetLighting(Settings),
+    /// Per-key colours from LED `start` on.
+    SetKeyColors {
+        start: u16,
+        colors: Vec<Rgb>,
+    },
 }
 
 /// Starts the device thread; commands go to the returned sender.
@@ -129,9 +136,13 @@ fn poll(
         } else {
             None
         };
-        Ok((description, keymap, lighting))
+        let key_colors = match lighting {
+            Some(info) => device.key_colors(info.leds)?,
+            None => Vec::new(),
+        };
+        Ok((description, keymap, lighting, key_colors))
     })();
-    let (description, keymap, lighting) = match loaded {
+    let (description, keymap, lighting, key_colors) = match loaded {
         Ok(l) => l,
         Err(e) => return e.to_string(),
     };
@@ -143,6 +154,7 @@ fn poll(
             description: Some(description),
             keymap,
             lighting,
+            key_colors,
             ..Keyboard::default()
         };
     });
@@ -203,6 +215,7 @@ fn commands(
                     }
                 });
             }),
+            Command::SetKeyColors { start, colors } => device.set_key_colors(start, &colors),
             Command::ResetKeymap => device.reset_keymap().and_then(|()| {
                 let keymap = (0..device.hello().layers)
                     .map(|l| device.layer(l))

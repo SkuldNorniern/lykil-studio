@@ -7,7 +7,7 @@
 use aurea::AureaResult;
 use aurea::render::{Color, DrawingContext};
 use lykil::binding::Binding;
-use lykil::lighting::{Effect, Hsv, Settings};
+use lykil::lighting::{Effect, Hsv, Rgb, Settings};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp;
 
@@ -217,8 +217,13 @@ enum Keys<'a> {
         layers: &'a [String],
         selected: Option<usize>,
     },
-    /// The lighting preview.
-    Lighting(Settings, f32),
+    /// The lighting preview at `time` seconds; `colors` are the per-key
+    /// colours by LED.
+    Lighting {
+        settings: Settings,
+        time: f32,
+        colors: &'a [Rgb],
+    },
     /// Key ids and what is pressed.
     Device,
 }
@@ -261,11 +266,16 @@ fn keyboard(
             kw as f32 * unit - gap,
             kh as f32 * unit - gap,
         );
-        let down = key.cell.is_some_and(|c| kb.closed(c));
-        let hovered = hover_keys && pen.hovered(cap);
         #[allow(clippy::cast_possible_truncation)]
-        let x_norm = ((x + kw / 2.0 - x0) / (x1 - x0)) as f32;
-        keycap(pen, cap, i, &key.id, keys, down, hovered, x_norm)?;
+        let info = Cap {
+            index: i,
+            id: &key.id,
+            led: key.led,
+            down: key.cell.is_some_and(|c| kb.closed(c)),
+            hovered: hover_keys && pen.hovered(cap),
+            x: ((x + kw / 2.0 - x0) / (x1 - x0)) as f32,
+        };
+        keycap(pen, cap, &info, keys)?;
         if hover_keys {
             hits.push((cap, Hit::Key(i)));
         }
@@ -273,22 +283,45 @@ fn keyboard(
     Ok(used)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn keycap(
-    pen: &mut Pen<'_>,
-    cap: Area,
+/// One key being drawn.
+struct Cap<'a> {
+    /// Description index.
     index: usize,
-    id: &str,
-    keys: &Keys<'_>,
+    id: &'a str,
+    led: Option<u16>,
     down: bool,
     hovered: bool,
-    x_norm: f32,
-) -> AureaResult<()> {
+    /// Centre across the board, `0..=1`.
+    x: f32,
+}
+
+fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> AureaResult<()> {
+    let Cap {
+        index,
+        id,
+        led,
+        down,
+        hovered,
+        x: x_norm,
+    } = *info;
     let radius = pen.s(6.0);
     let (face, selected) = match keys {
-        Keys::Lighting(s, t) => {
-            let lit = preview(*s, x_norm, *t, down);
-            (color::mix(color::SURFACE, lit, 0.9), false)
+        Keys::Lighting {
+            settings,
+            time,
+            colors,
+        } => {
+            let own = led.and_then(|l| colors.get(usize::from(l)).copied());
+            let lit = preview(*settings, x_norm, *time, down, own);
+            let face = color::mix(color::SURFACE, lit, 0.9);
+            (
+                if hovered {
+                    color::mix(face, color::TEXT, 0.2)
+                } else {
+                    face
+                },
+                false,
+            )
         }
         Keys::Keymap { selected, .. } => (
             if hovered { color::HOVER } else { color::RAISED },
@@ -335,7 +368,7 @@ fn keycap(
             }
         }
         Keys::Device => pen.fitted(id, label, 10.0, 6.0, color::DIM),
-        Keys::Lighting(..) => Ok(()),
+        Keys::Lighting { .. } => Ok(()),
     }
 }
 
@@ -350,14 +383,19 @@ fn bounds(desc: &Description) -> Option<(f64, f64, f64, f64)> {
 }
 
 /// What a key shows in the lighting preview; follows the firmware's
-/// effects closely enough to judge settings by.
-fn preview(s: Settings, x: f32, t: f32, down: bool) -> Color {
+/// effects closely enough to judge settings by. `own` is the key's
+/// per-key colour.
+fn preview(s: Settings, x: f32, t: f32, down: bool, own: Option<Rgb>) -> Color {
+    if s.effect == Effect::PerKey {
+        let c = own.unwrap_or(Rgb::OFF).scale(s.color.v);
+        return Color::rgb(c.r, c.g, c.b);
+    }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let phase = (t * 1000.0 * (f32::from(s.speed) + 16.0) / 1024.0) as u32;
     let base = s.color;
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let hsv = match s.effect {
-        Effect::Off => Hsv::new(0, 0, 0),
+        Effect::Off | Effect::PerKey => Hsv::new(0, 0, 0),
         Effect::Reactive if down => Hsv::new(base.h.wrapping_add(128), base.s, 255),
         Effect::Solid | Effect::Reactive => base,
         Effect::Breathing => {
@@ -814,8 +852,12 @@ fn lighting_tab(
         pen,
         kb_area,
         kb,
-        &Keys::Lighting(settings, shared.ui.time),
-        false,
+        &Keys::Lighting {
+            settings,
+            time: shared.ui.time,
+            colors: &kb.key_colors,
+        },
+        settings.effect == Effect::PerKey,
         hits,
     )?;
 
@@ -864,7 +906,10 @@ fn lighting_tab(
         .into_iter()
         .map(|e| (title(e.name()), Hit::Effect(e), e == settings.effect))
         .collect();
-    pills(pen, x, y, &effects, hits)?;
+    let end = pills(pen, x, y, &effects, hits)?;
+    if settings.effect == Effect::PerKey {
+        paint_bar(pen, end + pen.s(12.0), y, shared.brush(), hits)?;
+    }
     y += pen.s(46.0);
 
     sliders(
@@ -924,6 +969,23 @@ fn sliders(pen: &mut Pen<'_>, area: Area, settings: Settings, hits: &mut Hits) -
     }
 
     Ok(())
+}
+
+/// The brush colour and "paint all".
+fn paint_bar(pen: &mut Pen<'_>, x: f32, y: f32, brush: Rgb, hits: &mut Hits) -> AureaResult<()> {
+    let swatch = Area::new(x, y + pen.s(3.0), pen.s(24.0), pen.s(24.0));
+    pen.round(swatch, pen.s(12.0), Color::rgb(brush.r, brush.g, brush.b))?;
+    pen.outline(swatch, pen.s(12.0), pen.s(1.5), color::BORDER)?;
+    let items = [("Paint all".to_string(), Hit::PaintAll, false)];
+    let end = pills(pen, swatch.right() + pen.s(8.0), y, &items, hits)?;
+    let note = Area::new(end + pen.s(4.0), y + pen.s(7.0), pen.s(320.0), pen.s(16.0));
+    pen.fitted_left(
+        "Hue and saturation pick the brush. Click or drag over keys.",
+        note,
+        11.0,
+        8.0,
+        color::DIM,
+    )
 }
 
 fn title(name: &str) -> String {
@@ -1061,12 +1123,21 @@ mod tests {
             effect: Effect::Off,
             ..Settings::DEFAULT
         };
-        assert_eq!(preview(s, 0.0, 0.0, false), Color::rgb(0, 0, 0));
+        assert_eq!(preview(s, 0.0, 0.0, false, None), Color::rgb(0, 0, 0));
         let solid = Settings {
             effect: Effect::Solid,
             color: Hsv::new(0, 255, 255),
             ..Settings::DEFAULT
         };
-        assert_eq!(preview(solid, 0.3, 5.0, false), Color::rgb(255, 0, 0));
+        assert_eq!(preview(solid, 0.3, 5.0, false, None), Color::rgb(255, 0, 0));
+        let own = Settings {
+            effect: Effect::PerKey,
+            color: Hsv::new(0, 0, 255),
+            ..Settings::DEFAULT
+        };
+        assert_eq!(
+            preview(own, 0.0, 0.0, false, Some(Rgb::new(1, 2, 3))),
+            Color::rgb(1, 2, 3)
+        );
     }
 }

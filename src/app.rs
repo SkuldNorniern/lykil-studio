@@ -10,7 +10,7 @@ use std::sync::mpsc::Sender;
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
 use lykil::keycode::Modifiers;
-use lykil::lighting::{Effect, Settings};
+use lykil::lighting::{Effect, Hsv, Settings};
 
 use crate::device::{Command, Keyboard};
 use crate::draw::Area;
@@ -65,6 +65,8 @@ pub enum Hit {
     /// A modifier sent with the selected key, switched on or off.
     With(Modifiers),
     ResetKeymap,
+    /// Every key the brush colour.
+    PaintAll,
     Effect(Effect),
     Slider(Slider),
     OsLighting(bool),
@@ -83,6 +85,8 @@ pub struct Ui {
     pub hits: Vec<(Area, Hit)>,
     /// The slider being dragged and its track.
     drag: Option<(Slider, Area)>,
+    /// The mouse is down on a key in per-key painting.
+    painting: bool,
     /// Lighting settings sent but not confirmed yet, so controls follow the
     /// mouse at once.
     pub draft: Option<Settings>,
@@ -141,6 +145,11 @@ impl Shared {
                     self.slide(slider, track, tx);
                     return true;
                 }
+                if self.ui.painting
+                    && let Some(Hit::Key(k)) = self.ui.hovered()
+                {
+                    self.paint(k, tx);
+                }
                 before != self.ui.hovered()
             }
             WindowEvent::MouseButton {
@@ -158,6 +167,7 @@ impl Shared {
                     self.click(tx);
                 } else {
                     self.ui.drag = None;
+                    self.ui.painting = false;
                 }
                 true
             }
@@ -189,6 +199,19 @@ impl Shared {
         match hit {
             Hit::Tab(t) => self.ui.tab = t,
             Hit::Layer(l) => self.ui.layer = l,
+            Hit::Key(k) if self.ui.tab == Tab::Lighting => {
+                self.ui.painting = true;
+                self.paint(k, tx);
+            }
+            Hit::PaintAll => {
+                let color = self.brush();
+                let count = self.keyboard.key_colors.len();
+                self.keyboard.key_colors = vec![color; count];
+                let _ = tx.send(Command::SetKeyColors {
+                    start: 0,
+                    colors: vec![color; count],
+                });
+            }
             Hit::Key(k) => {
                 self.ui.selected = if self.ui.selected == Some(k) {
                     None
@@ -279,6 +302,36 @@ impl Shared {
                 .map_or(0, |d| d.keys.len());
             self.ui.selected = (key + 1 < keys).then_some(key + 1);
         }
+    }
+
+    /// The per-key brush: the lighting hue and saturation at full value.
+    pub fn brush(&self) -> lykil::lighting::Rgb {
+        let c = self.lighting().map_or(Settings::DEFAULT.color, |s| s.color);
+        Hsv::new(c.h, c.s, 255).to_rgb()
+    }
+
+    /// Paints key `k` (by description index) with the brush.
+    fn paint(&mut self, k: usize, tx: &Sender<Command>) {
+        let color = self.brush();
+        let Some(led) = self
+            .keyboard
+            .description
+            .as_ref()
+            .and_then(|d| d.keys.get(k)?.led)
+        else {
+            return;
+        };
+        let Some(slot) = self.keyboard.key_colors.get_mut(usize::from(led)) else {
+            return;
+        };
+        if *slot == color {
+            return;
+        }
+        *slot = color;
+        let _ = tx.send(Command::SetKeyColors {
+            start: led,
+            colors: vec![color],
+        });
     }
 
     fn slide(&mut self, slider: Slider, track: Area, tx: &Sender<Command>) {
