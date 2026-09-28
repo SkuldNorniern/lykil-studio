@@ -197,6 +197,10 @@ const KO: &[(&str, &str)] = &[
         "지금은 앱이나 Windows가 색을 정하고 있습니다.",
     ),
     (
+        "The LED driver chips do not answer; the keyboard keeps trying.",
+        "LED 드라이버 칩이 응답하지 않습니다. 키보드가 계속 다시 시도합니다.",
+    ),
+    (
         "{} LEDs. Settings are saved on the keyboard.",
         "LED {}개. 설정은 키보드에 저장됩니다.",
     ),

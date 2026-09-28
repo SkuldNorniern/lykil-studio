@@ -1261,6 +1261,9 @@ fn lighting_tab(
     )?;
 
     Ok(match info {
+        Some(i) if !i.drivers_ok => lang
+            .tr("The LED driver chips do not answer; the keyboard keeps trying.")
+            .into(),
         Some(i) if i.host => lang
             .tr("An app or Windows is setting the colours right now.")
             .into(),

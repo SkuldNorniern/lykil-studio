@@ -191,6 +191,14 @@ fn poll(
                 Ok(d) => update(shared, canvas, |k| k.diagnostics = Some(d)),
                 Err(e) => return e.to_string(),
             }
+            // Lighting can change on the keyboard itself (lighting keys,
+            // Windows), and the drivers can come and go.
+            if hello.capabilities & capability::LIGHTING != 0 {
+                match device.lighting() {
+                    Ok(info) => update(shared, canvas, |k| k.lighting = Some(info)),
+                    Err(e) => return e.to_string(),
+                }
+            }
         }
         thread::sleep(MATRIX_EVERY);
     }
