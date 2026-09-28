@@ -15,6 +15,8 @@ four pages:
 - lighting: who controls the LEDs (the keyboard's own effect, or Windows Dynamic Lighting), effect, hue, saturation, brightness, speed. the keyboard on screen previews the effect. with "per-key", click or drag over keys to paint them in the hue and saturation picked
 - device: key test (keys light up while pressed), layout, uptime, scans, faults, watchdog resets, last start, storage
 
+english and korean: follows the system language, `LYKIL_LANG=ko` or `en` overrides, and the button in the header switches. text is looked up in `lang.rs`; anything missing stays english. korean uses Malgun Gothic, since the renderer takes one font per text.
+
 it finds the keyboard by itself and comes back after an unplug. close VIA while it runs: every program with the raw HID interface open gets every answer.
 
 the whole window is one canvas: `view.rs` draws it and records where every control is, `app.rs` handles the mouse against that, `device.rs` talks to the keyboard on its own thread.

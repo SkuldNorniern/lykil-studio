@@ -109,6 +109,8 @@ pub struct Ui {
     /// Canvas pixels per design pixel.
     pub scale: f32,
     pub lang: crate::lang::Lang,
+    /// A message from Studio itself for the footer, until the next click.
+    pub notice: Option<String>,
 }
 
 impl Ui {
@@ -229,6 +231,8 @@ impl Shared {
     }
 
     fn click(&mut self, tx: &Sender<Command>) {
+        self.ui.notice = None;
+        self.keyboard.error = None;
         let hit = self.ui.hovered();
         if hit != Some(Hit::ResetKeymap) {
             self.ui.confirm_reset = false;
@@ -376,7 +380,7 @@ impl Shared {
     fn send_macro(&mut self, steps: Vec<lykil::macros::Step>, tx: &Sender<Command>) {
         let id = self.ui.macro_id;
         if steps.len() > lykil::macros::MACRO_STEPS {
-            self.keyboard.error = Some(self.ui.lang.fill(
+            self.ui.notice = Some(self.ui.lang.fill(
                 "too long: {} steps, a macro holds {}",
                 &[
                     &steps.len().to_string(),

@@ -61,7 +61,13 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         waiting(&mut pen, body, &shared.keyboard)?;
         String::new()
     };
-    footer(&mut pen, w, h, &shared.keyboard, &status)?;
+    footer(
+        &mut pen,
+        (w, h),
+        &shared.keyboard,
+        shared.ui.notice.as_deref(),
+        &status,
+    )?;
     shared.ui.hits = hits;
     Ok(())
 }
@@ -162,16 +168,27 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     Ok(())
 }
 
-fn footer(pen: &mut Pen<'_>, w: f32, h: f32, kb: &Keyboard, status: &str) -> AureaResult<()> {
+/// `status` from the page, unless there is a `notice` or a refused change.
+fn footer(
+    pen: &mut Pen<'_>,
+    (w, h): (f32, f32),
+    kb: &Keyboard,
+    notice: Option<&str>,
+    status: &str,
+) -> AureaResult<()> {
     let lang = pen.lang;
     let bar = Area::new(0.0, h - pen.s(FOOTER), w, pen.s(FOOTER));
     pen.fill(bar, color::SURFACE)?;
     pen.fill(Area::new(0.0, bar.y, w, 1.0), color::BORDER)?;
-    let (text, c) = match &kb.error {
-        Some(e) => (e.as_str(), color::BAD),
-        None => (status, color::DIM),
+    let (text, c) = match (notice, &kb.error) {
+        (Some(n), _) => (n.to_string(), color::BAD),
+        (None, Some(e)) => (
+            lang.fill("the keyboard refused the change: {}", &[e]),
+            color::BAD,
+        ),
+        (None, None) => (status.to_string(), color::DIM),
     };
-    pen.text(text, pen.s(MARGIN), bar.y + pen.s(8.0), &pen.font(12.0), c)?;
+    pen.text(&text, pen.s(MARGIN), bar.y + pen.s(8.0), &pen.font(12.0), c)?;
     if let Some(d) = &kb.diagnostics {
         let health = if d.faults == 0 {
             lang.fill("up {}   healthy", &[&uptime(d.uptime_ms)])

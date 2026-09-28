@@ -44,7 +44,8 @@ pub struct Keyboard {
     pub key_colors: Vec<Rgb>,
     /// Every macro's steps, by id.
     pub macros: Vec<Vec<Step>>,
-    /// The last change the keyboard refused, for the status line.
+    /// The status of the last change the keyboard refused, for the status
+    /// line.
     pub error: Option<String>,
 }
 
