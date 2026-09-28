@@ -148,6 +148,9 @@ pub struct Presses {
     pub recent: VecDeque<(usize, f32)>,
     /// Heatmap warmth per key, `0..=1`, and when it was last set.
     heat: Vec<(f32, f32)>,
+    /// For each key, the keys a press warms and by how much, with the
+    /// size it was worked out for.
+    reach: (u8, Vec<Vec<(usize, f32)>>),
 }
 
 /// Heat one press adds, as the firmware's 22000 of 65535.
@@ -159,16 +162,50 @@ impl Presses {
             self.at.resize(key + 1, None);
         }
         self.at[key] = Some(time);
-        if self.heat.len() <= key {
-            self.heat.resize(key + 1, (0.0, time));
+        let near = self
+            .reach
+            .1
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| vec![(key, 1.0)]);
+        for (k, share) in near {
+            if self.heat.len() <= k {
+                self.heat.resize(k + 1, (0.0, time));
+            }
+            // Speed only sets how fast heat goes; for adding, any will do.
+            let warm = self.heat_at(k, time, 128);
+            self.heat[k] = ((warm + HEAT_PER_PRESS * share).min(1.0), time);
         }
-        // Speed only sets how fast heat goes; for adding, any will do.
-        let warm = self.heat_at(key, time, 128);
-        self.heat[key] = ((warm + HEAT_PER_PRESS).min(1.0), time);
         if self.recent.len() == RIPPLES {
             self.recent.pop_front();
         }
         self.recent.push_back((key, time));
+    }
+
+    /// Works out which keys a press warms, as the firmware does: keys
+    /// within `size / 3 + 1` layout units, less the further they are.
+    pub fn set_reach(&mut self, points: &[Option<lykil::lighting::Point>], size: u8) {
+        if self.reach.0 == size && self.reach.1.len() == points.len() {
+            return;
+        }
+        let reach = f32::from(size / 3 + 1);
+        let near = |from: Option<lykil::lighting::Point>| -> Vec<(usize, f32)> {
+            let Some(a) = from else {
+                return Vec::new();
+            };
+            points
+                .iter()
+                .enumerate()
+                .filter_map(|(k, p)| {
+                    let b = (*p)?;
+                    let dx = f32::from(a.x.abs_diff(b.x));
+                    let dy = f32::from(a.y.abs_diff(b.y));
+                    let d = (dx * dx + dy * dy).sqrt().floor();
+                    (d < reach).then(|| (k, (reach - d) / reach))
+                })
+                .collect()
+        };
+        self.reach = (size, points.iter().map(|p| near(*p)).collect());
     }
 
     /// Key `key`'s heat at `time`, cooling as the firmware does: about 10 s
@@ -337,6 +374,9 @@ impl Shared {
             .iter()
             .map(|k| k.cell.is_some_and(|c| self.keyboard.closed(c)))
             .collect();
+        let points = crate::lights::points(desc);
+        let size = self.lighting().map_or(0, |s| s.size);
+        self.ui.presses.set_reach(&points, size);
         let time = self.ui.anim.time();
         self.ui.presses.follow(&down, time);
     }
