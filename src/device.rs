@@ -266,7 +266,7 @@ fn refused(
         Ok(()) => Ok(()),
         Err(DeviceError::Status(s)) => {
             update(shared, canvas, |k| {
-                k.error = Some(format!("the keyboard refused the change: {s:?}"));
+                k.error = Some(format!("{s:?}"));
             });
             Ok(())
         }

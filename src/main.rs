@@ -13,6 +13,7 @@ mod app;
 mod device;
 mod draw;
 mod edit;
+mod lang;
 mod legend;
 mod view;
 
@@ -48,7 +49,11 @@ fn run() -> aurea::AureaResult<()> {
     canvas.set_background_color(draw::color::BACKGROUND);
 
     let shared = Arc::new(Mutex::new(Shared::default()));
-    lock(&shared).ui.scale = canvas.scale_factor();
+    {
+        let mut s = lock(&shared);
+        s.ui.scale = canvas.scale_factor();
+        s.ui.lang = lang::Lang::detect();
+    }
     let tx = device::spawn(Arc::clone(&shared), canvas.id());
 
     let drawn = Arc::clone(&shared);

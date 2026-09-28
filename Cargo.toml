@@ -12,6 +12,7 @@ aurea = { git = "https://github.com/SkuldNorniern/aurea" }
 lykil = { path = "../lykil" }
 lykil-config = { path = "../lykil/lykil-config" }
 lykil-device = { path = "../lykil/lykil-device" }
+sys-locale = "0.3"
 lykil-protocol = { path = "../lykil/lykil-protocol", features = ["std"] }
 
 [lints.rust]

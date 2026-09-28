@@ -67,6 +67,8 @@ pub enum Hit {
     /// A modifier sent with the selected key, switched on or off.
     With(Modifiers),
     ResetKeymap,
+    /// Switches between English and Korean.
+    Lang,
     /// Every key the brush colour.
     PaintAll,
     /// A macro slot.
@@ -106,6 +108,7 @@ pub struct Ui {
     pub time: f32,
     /// Canvas pixels per design pixel.
     pub scale: f32,
+    pub lang: crate::lang::Lang,
 }
 
 impl Ui {
@@ -235,6 +238,7 @@ impl Shared {
         };
         match hit {
             Hit::Tab(t) => self.ui.tab = t,
+            Hit::Lang => self.ui.lang = self.ui.lang.other(),
             Hit::Layer(l) => self.ui.layer = l,
             Hit::Key(k) if self.ui.tab == Tab::Lighting => {
                 self.ui.painting = true;
@@ -372,10 +376,12 @@ impl Shared {
     fn send_macro(&mut self, steps: Vec<lykil::macros::Step>, tx: &Sender<Command>) {
         let id = self.ui.macro_id;
         if steps.len() > lykil::macros::MACRO_STEPS {
-            self.keyboard.error = Some(format!(
+            self.keyboard.error = Some(self.ui.lang.fill(
                 "too long: {} steps, a macro holds {}",
-                steps.len(),
-                lykil::macros::MACRO_STEPS
+                &[
+                    &steps.len().to_string(),
+                    &lykil::macros::MACRO_STEPS.to_string(),
+                ],
             ));
             return;
         }

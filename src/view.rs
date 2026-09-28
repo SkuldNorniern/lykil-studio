@@ -38,7 +38,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         ctx,
         scale,
         mouse: shared.ui.mouse,
-        family: "Segoe UI",
+        lang: shared.ui.lang,
     };
     let mut hits = Hits::new();
     pen.fill(Area::new(0.0, 0.0, w, h), color::BACKGROUND)?;
@@ -67,6 +67,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
 }
 
 fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaResult<()> {
+    let lang = pen.lang;
     pen.fill(Area::new(0.0, 0.0, w, pen.s(HEADER)), color::SURFACE)?;
     pen.fill(Area::new(0.0, pen.s(HEADER) - 1.0, w, 1.0), color::BORDER)?;
     let x = pen.s(MARGIN);
@@ -81,7 +82,7 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     let name = if kb.connection == Connection::Connected {
         kb.name.as_str()
     } else {
-        "No keyboard"
+        lang.tr("No keyboard")
     };
     pen.text(name, x, pen.s(28.0), &pen.bold(17.0), color::TEXT)?;
 
@@ -114,15 +115,15 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
         } else {
             color::DIM
         };
-        pen.centred(tab.name(), a, &pen.bold(13.0), fg)?;
+        pen.centred(lang.tr(tab.name()), a, &pen.bold(13.0), fg)?;
         hits.push((a, Hit::Tab(tab)));
     }
 
     // Connection, right.
     let (text, dot) = match &kb.connection {
-        Connection::Connected => ("Connected", color::GOOD),
-        Connection::Searching => ("Looking for a keyboard", color::DIM),
-        Connection::Lost(_) => ("Connection lost", color::BAD),
+        Connection::Connected => (lang.tr("Connected"), color::GOOD),
+        Connection::Searching => (lang.tr("Looking for a keyboard"), color::DIM),
+        Connection::Lost(_) => (lang.tr("Connection lost"), color::BAD),
     };
     let font = pen.font(12.0);
     let tw = pen.width(text, &font);
@@ -139,10 +140,30 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
         pen.s(HEADER / 2.0 - 7.0),
         &font,
         color::DIM,
-    )
+    )?;
+
+    // Language, left of the connection.
+    let other = lang.other().label();
+    let lw = pen.width(other, &font) + pen.s(20.0);
+    let lang = Area::new(
+        right - tw - pen.s(28.0) - lw,
+        pen.s(HEADER / 2.0 - 12.0),
+        lw,
+        pen.s(24.0),
+    );
+    let bg = if pen.hovered(lang) {
+        color::HOVER
+    } else {
+        color::RAISED
+    };
+    pen.round(lang, pen.s(12.0), bg)?;
+    pen.centred(other, lang, &font, color::DIM)?;
+    hits.push((lang, Hit::Lang));
+    Ok(())
 }
 
 fn footer(pen: &mut Pen<'_>, w: f32, h: f32, kb: &Keyboard, status: &str) -> AureaResult<()> {
+    let lang = pen.lang;
     let bar = Area::new(0.0, h - pen.s(FOOTER), w, pen.s(FOOTER));
     pen.fill(bar, color::SURFACE)?;
     pen.fill(Area::new(0.0, bar.y, w, 1.0), color::BORDER)?;
@@ -153,9 +174,12 @@ fn footer(pen: &mut Pen<'_>, w: f32, h: f32, kb: &Keyboard, status: &str) -> Aur
     pen.text(text, pen.s(MARGIN), bar.y + pen.s(8.0), &pen.font(12.0), c)?;
     if let Some(d) = &kb.diagnostics {
         let health = if d.faults == 0 {
-            format!("up {}   healthy", uptime(d.uptime_ms))
+            lang.fill("up {}   healthy", &[&uptime(d.uptime_ms)])
         } else {
-            format!("up {}   {} faults", uptime(d.uptime_ms), d.faults)
+            lang.fill(
+                "up {}   {} faults",
+                &[&uptime(d.uptime_ms), &d.faults.to_string()],
+            )
         };
         let font = pen.font(12.0);
         let tw = pen.width(&health, &font);
@@ -185,6 +209,7 @@ fn uptime(ms: u32) -> String {
 }
 
 fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard) -> AureaResult<()> {
+    let lang = pen.lang;
     let card = Area::new(
         body.x + (body.w - pen.s(420.0)) / 2.0,
         body.y + body.h / 2.0 - pen.s(70.0),
@@ -194,14 +219,16 @@ fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard) -> AureaResult<()> {
     pen.round(card, pen.s(14.0), color::SURFACE)?;
     let title = Area::new(card.x, card.y + pen.s(30.0), card.w, pen.s(24.0));
     pen.centred(
-        "Plug in a Lykil keyboard",
+        lang.tr("Plug in a Lykil keyboard"),
         title,
         &pen.bold(18.0),
         color::TEXT,
     )?;
     let line = match &kb.connection {
-        Connection::Lost(why) => format!("The connection was lost: {why}"),
-        _ => "Studio finds it on its own. Close VIA if it is open.".into(),
+        Connection::Lost(why) => lang.fill("The connection was lost: {}", &[why]),
+        _ => lang
+            .tr("Studio finds it on its own. Close VIA if it is open.")
+            .into(),
     };
     let sub = Area::new(
         card.x + pen.s(16.0),
@@ -466,6 +493,7 @@ fn keymap_tab(
     shared: &mut Shared,
     hits: &mut Hits,
 ) -> AureaResult<String> {
+    let lang = pen.lang;
     let kb = &shared.keyboard;
     let ui = &shared.ui;
     let layers = kb.layer_names();
@@ -500,12 +528,14 @@ fn keymap_tab(
     let desc = kb.description.as_ref();
     let Some((index, info)) = ui.selected.and_then(|k| desc?.keys.get(k).map(|d| (k, d))) else {
         pen.centred(
-            "Click a key to change what it does",
+            lang.tr("Click a key to change what it does"),
             panel,
             &pen.font(14.0),
             color::DIM,
         )?;
-        return Ok("Click a key, then pick a binding. Changes are saved on the keyboard.".into());
+        return Ok(lang
+            .tr("Click a key, then pick a binding. Changes are saved on the keyboard.")
+            .into());
     };
     let current = bindings.get(index).copied().unwrap_or_default();
 
@@ -530,7 +560,7 @@ fn keymap_tab(
         .get(usize::from(ui.layer))
         .map_or("?", String::as_str);
     pen.text(
-        &format!("{} on {layer_name}", info.id),
+        &lang.fill("{} on {}", &[&info.id, layer_name]),
         tx,
         cap.y + pen.s(4.0),
         &pen.bold(14.0),
@@ -562,9 +592,9 @@ fn keymap_tab(
         (ui.group, !kb.macros.is_empty()),
         hits,
     )?;
-    Ok(format!(
-        "Editing {} on {layer_name}. A pick moves on to the next key. Esc to stop.",
-        info.id
+    Ok(lang.fill(
+        "Editing {} on {}. A pick moves on to the next key. Esc to stop.",
+        &[&info.id, layer_name],
     ))
 }
 
@@ -576,12 +606,13 @@ fn key_parts(
     layers: &[String],
     hits: &mut Hits,
 ) -> AureaResult<()> {
+    let lang = pen.lang;
     let mut y = area.y;
     if let Some(now) = edit::hold(current) {
-        label(pen, "WHEN HELD", area.x, y)?;
+        label(pen, lang.tr("WHEN HELD"), area.x, y)?;
         y += pen.s(16.0);
         let mut items = vec![(
-            "tap only".to_string(),
+            lang.tr("tap only").to_string(),
             Hit::Hold(Hold::Nothing),
             now == Hold::Nothing,
         )];
@@ -605,7 +636,7 @@ fn key_parts(
         )? + pen.s(10.0);
     }
     if let Some(mods) = edit::with(current) {
-        label(pen, "SEND WITH", area.x, y)?;
+        label(pen, lang.tr("SEND WITH"), area.x, y)?;
         y += pen.s(16.0);
         let items: Vec<_> = edit::MODS
             .iter()
@@ -666,7 +697,8 @@ fn layer_bar(
     confirm_reset: bool,
     hits: &mut Hits,
 ) -> AureaResult<()> {
-    label(pen, "LAYER", body.x, body.y + pen.s(8.0))?;
+    let lang = pen.lang;
+    label(pen, lang.tr("LAYER"), body.x, body.y + pen.s(8.0))?;
     let items: Vec<_> = layers
         .iter()
         .enumerate()
@@ -678,9 +710,9 @@ fn layer_bar(
     pills(pen, body.x + pen.s(56.0), body.y, &items, hits)?;
 
     let reset = if confirm_reset {
-        "Click again to reset every layer"
+        lang.tr("Click again to reset every layer")
     } else {
-        "Reset keymap"
+        lang.tr("Reset keymap")
     };
     let font = pen.bold(12.0);
     let rw = pen.width(reset, &font) + pen.s(24.0);
@@ -754,6 +786,7 @@ fn palette(
     (chosen, macros): (usize, bool),
     hits: &mut Hits,
 ) -> AureaResult<()> {
+    let lang = pen.lang;
     let groups = legend::palette(layers, macros);
     let list_w = pen.s(150.0);
     #[allow(clippy::cast_precision_loss)]
@@ -788,7 +821,13 @@ fn palette(
             )?;
         }
         let fg = if active { color::TEXT } else { color::DIM };
-        pen.text(group.name, a.x + pen.s(12.0), a.y + pen.s(5.0), &font, fg)?;
+        pen.text(
+            lang.tr(group.name),
+            a.x + pen.s(12.0),
+            a.y + pen.s(5.0),
+            &font,
+            fg,
+        )?;
         if has_current {
             pen.circle(
                 a.right() - pen.s(10.0),
@@ -848,6 +887,7 @@ fn macro_list(
     chosen: usize,
     hits: &mut Hits,
 ) -> AureaResult<()> {
+    let lang = pen.lang;
     let row_h = pen.s(40.0);
     for (i, steps) in macros.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]
@@ -877,10 +917,10 @@ fn macro_list(
             color::ACCENT,
         )?;
         let preview = match lykil_config::text::text(steps) {
-            _ if steps.is_empty() => "empty".to_string(),
+            _ if steps.is_empty() => lang.tr("empty").to_string(),
             Some(t) => format!("\"{}\"", t.replace('\n', "\u{21b5}")),
-            None if steps.len() == 1 => "1 step".to_string(),
-            None => format!("{} steps", steps.len()),
+            None if steps.len() == 1 => lang.tr("1 step").to_string(),
+            None => lang.fill("{} steps", &[&steps.len().to_string()]),
         };
         let c = if steps.is_empty() {
             color::FAINT
@@ -897,6 +937,7 @@ fn macro_list(
 
 /// Multi-line text in `field`, with a caret at the end while editing.
 fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> AureaResult<()> {
+    let lang = pen.lang;
     let font = pen.font(15.0);
     let mut ty = field.y + pen.s(12.0);
     let lines: Vec<&str> = text.split('\n').collect();
@@ -914,13 +955,35 @@ fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> Aure
     }
     if text.is_empty() && !editing {
         pen.text(
-            "Start typing: this macro will type the same text.",
+            lang.tr("Start typing: this macro will type the same text."),
             field.x + pen.s(12.0),
             field.y + pen.s(12.0),
             &font,
             color::FAINT,
         )?;
     }
+    Ok(())
+}
+
+/// How to use macro `id`, under the editor.
+fn macro_note(pen: &mut Pen<'_>, editor: Area, id: usize) -> AureaResult<()> {
+    let lang = pen.lang;
+    let note = Area::new(
+        editor.x,
+        editor.bottom() + pen.s(16.0),
+        editor.w,
+        pen.s(18.0),
+    );
+    pen.fitted_left(
+        &lang.fill(
+            "Bind it on the keymap page: Macros group, {}. Typed as a US layout.",
+            &[&format!("M{id}")],
+        ),
+        note,
+        12.0,
+        8.0,
+        color::DIM,
+    )?;
     Ok(())
 }
 
@@ -931,11 +994,12 @@ fn macros_tab(
     shared: &mut Shared,
     hits: &mut Hits,
 ) -> AureaResult<String> {
+    let lang = pen.lang;
     let kb = &shared.keyboard;
     let ui = &shared.ui;
     if kb.macros.is_empty() {
         pen.centred(
-            "This keyboard's firmware has no macros yet",
+            lang.tr("This keyboard's firmware has no macros yet"),
             body,
             &pen.font(15.0),
             color::DIM,
@@ -961,7 +1025,7 @@ fn macros_tab(
     let x = editor.x + pen.s(20.0);
     let id = ui.macro_id;
     pen.text(
-        &format!("Macro M{id}"),
+        &lang.fill("Macro {}", &[&format!("M{id}")]),
         x,
         editor.y + pen.s(18.0),
         &pen.bold(17.0),
@@ -974,7 +1038,7 @@ fn macros_tab(
         .clone()
         .or_else(|| lykil_config::text::text(&saved))
         .unwrap_or_default();
-    label(pen, "TYPES", x, editor.y + pen.s(54.0))?;
+    label(pen, lang.tr("TYPES"), x, editor.y + pen.s(54.0))?;
     let field = Area::new(
         x,
         editor.y + pen.s(72.0),
@@ -988,7 +1052,10 @@ fn macros_tab(
     text_field(pen, field, &text, editing)?;
     let steps = lykil_config::text::steps(&text).map_or(0, |s| s.len());
     let full = steps > lykil::macros::MACRO_STEPS;
-    let count = format!("{steps} / {} steps", lykil::macros::MACRO_STEPS);
+    let count = lang.fill(
+        "{} / {} steps",
+        &[&steps.to_string(), &lykil::macros::MACRO_STEPS.to_string()],
+    );
     let cf = pen.font(11.0);
     let cw = pen.width(&count, &cf);
     pen.text(
@@ -1001,29 +1068,23 @@ fn macros_tab(
     let y = field.bottom() + pen.s(30.0);
     let mut buttons = Vec::new();
     if editing && !full {
-        buttons.push(("Save to keyboard".to_string(), Hit::SaveMacro, true));
+        buttons.push((
+            lang.tr("Save to keyboard").to_string(),
+            Hit::SaveMacro,
+            true,
+        ));
     }
     if !saved.is_empty() {
-        buttons.push(("Clear".to_string(), Hit::ClearMacro, false));
+        buttons.push((lang.tr("Clear").to_string(), Hit::ClearMacro, false));
     }
     pills(pen, x, y, &buttons, hits)?;
-    let note = Area::new(
-        editor.x,
-        editor.bottom() + pen.s(16.0),
-        editor.w,
-        pen.s(18.0),
-    );
-    pen.fitted_left(
-        &format!("Bind it on the keymap page: Macros group, M{id}. Typed as a US layout."),
-        note,
-        12.0,
-        8.0,
-        color::DIM,
-    )?;
+    macro_note(pen, editor, id)?;
     Ok(if editing {
-        "Typing into the macro. Save sends it to the keyboard; Esc throws it away.".into()
+        lang.tr("Typing into the macro. Save sends it to the keyboard; Esc throws it away.")
+            .into()
     } else {
-        "Pick a macro and type. Letters, digits, symbols, space, Enter and Tab.".into()
+        lang.tr("Pick a macro and type. Letters, digits, symbols, space, Enter and Tab.")
+            .into()
     })
 }
 
@@ -1033,9 +1094,10 @@ fn lighting_tab(
     shared: &mut Shared,
     hits: &mut Hits,
 ) -> AureaResult<String> {
+    let lang = pen.lang;
     let Some(settings) = shared.lighting() else {
         pen.centred(
-            "This keyboard has no lighting",
+            lang.tr("This keyboard has no lighting"),
             body,
             &pen.font(15.0),
             color::DIM,
@@ -1068,25 +1130,25 @@ fn lighting_tab(
     let x = panel.x + pen.s(20.0);
     let mut y = panel.y + pen.s(16.0);
 
-    label(pen, "WHO CONTROLS THE LIGHTS", x, y)?;
+    label(pen, lang.tr("WHO CONTROLS THE LIGHTS"), x, y)?;
     y += pen.s(18.0);
     let modes = [
         (
-            "Keyboard effects".to_string(),
+            lang.tr("Keyboard effects").to_string(),
             Hit::OsLighting(false),
             !settings.os_lighting,
         ),
         (
-            "Windows Dynamic Lighting".to_string(),
+            lang.tr("Windows Dynamic Lighting").to_string(),
             Hit::OsLighting(true),
             settings.os_lighting,
         ),
     ];
     let end = pills(pen, x, y, &modes, hits)?;
     let note = if settings.os_lighting {
-        "Windows may take the LEDs (Settings > Personalization > Dynamic Lighting). The effect runs while it does not."
+        lang.tr("Windows may take the LEDs (Settings > Personalization > Dynamic Lighting). The effect runs while it does not.")
     } else {
-        "The keyboard runs its own effect; Windows is ignored."
+        lang.tr("The keyboard runs its own effect; Windows is ignored.")
     };
     let note_area = Area::new(
         end + pen.s(8.0),
@@ -1097,11 +1159,17 @@ fn lighting_tab(
     pen.fitted_left(note, note_area, 11.0, 8.0, color::DIM)?;
     y += pen.s(46.0);
 
-    label(pen, "EFFECT", x, y)?;
+    label(pen, lang.tr("EFFECT"), x, y)?;
     y += pen.s(18.0);
     let effects: Vec<_> = Effect::ALL
         .into_iter()
-        .map(|e| (title(e.name()), Hit::Effect(e), e == settings.effect))
+        .map(|e| {
+            (
+                lang.tr(effect_name(e)).to_string(),
+                Hit::Effect(e),
+                e == settings.effect,
+            )
+        })
         .collect();
     let end = pills(pen, x, y, &effects, hits)?;
     if settings.effect == Effect::PerKey {
@@ -1117,14 +1185,20 @@ fn lighting_tab(
     )?;
 
     Ok(match info {
-        Some(i) if i.host => "An app or Windows is setting the colours right now.".into(),
-        Some(i) => format!("{} LEDs. Settings are saved on the keyboard.", i.leds),
+        Some(i) if i.host => lang
+            .tr("An app or Windows is setting the colours right now.")
+            .into(),
+        Some(i) => lang.fill(
+            "{} LEDs. Settings are saved on the keyboard.",
+            &[&i.leds.to_string()],
+        ),
         None => String::new(),
     })
 }
 
 /// Hue, saturation, brightness and speed, two per row.
 fn sliders(pen: &mut Pen<'_>, area: Area, settings: Settings, hits: &mut Hits) -> AureaResult<()> {
+    let lang = pen.lang;
     let (x, y) = (area.x, area.y);
     let track_w = (area.w - pen.s(24.0)) / 2.0;
     let c = settings.color;
@@ -1143,7 +1217,7 @@ fn sliders(pen: &mut Pen<'_>, area: Area, settings: Settings, hits: &mut Hits) -
         if sy + pen.s(40.0) > area.bottom() {
             break;
         }
-        label(pen, name, sx, sy)?;
+        label(pen, lang.tr(name), sx, sy)?;
         let pct = format!("{}%", u32::from(value) * 100 / 255);
         let font = pen.font(11.0);
         let vw = pen.width(&pct, &font);
@@ -1170,14 +1244,15 @@ fn sliders(pen: &mut Pen<'_>, area: Area, settings: Settings, hits: &mut Hits) -
 
 /// The brush colour and "paint all".
 fn paint_bar(pen: &mut Pen<'_>, x: f32, y: f32, brush: Rgb, hits: &mut Hits) -> AureaResult<()> {
+    let lang = pen.lang;
     let swatch = Area::new(x, y + pen.s(3.0), pen.s(24.0), pen.s(24.0));
     pen.round(swatch, pen.s(12.0), Color::rgb(brush.r, brush.g, brush.b))?;
     pen.outline(swatch, pen.s(12.0), pen.s(1.5), color::BORDER)?;
-    let items = [("Paint all".to_string(), Hit::PaintAll, false)];
+    let items = [(lang.tr("Paint all").to_string(), Hit::PaintAll, false)];
     let end = pills(pen, swatch.right() + pen.s(8.0), y, &items, hits)?;
     let note = Area::new(end + pen.s(4.0), y + pen.s(7.0), pen.s(320.0), pen.s(16.0));
     pen.fitted_left(
-        "Hue and saturation pick the brush. Click or drag over keys.",
+        lang.tr("Hue and saturation pick the brush. Click or drag over keys."),
         note,
         11.0,
         8.0,
@@ -1185,12 +1260,17 @@ fn paint_bar(pen: &mut Pen<'_>, x: f32, y: f32, brush: Rgb, hits: &mut Hits) -> 
     )
 }
 
-fn title(name: &str) -> String {
-    let mut s = name.to_string();
-    if let Some(f) = s.get_mut(..1) {
-        f.make_ascii_uppercase();
+/// An effect's name as shown.
+const fn effect_name(e: Effect) -> &'static str {
+    match e {
+        Effect::Off => "Off",
+        Effect::Solid => "Solid",
+        Effect::Breathing => "Breathing",
+        Effect::Cycle => "Cycle",
+        Effect::Wave => "Wave",
+        Effect::Reactive => "Reactive",
+        Effect::PerKey => "Per-key",
     }
-    s
 }
 
 /// The track shows what the slider changes.
@@ -1226,12 +1306,19 @@ fn device_tab(
     shared: &mut Shared,
     hits: &mut Hits,
 ) -> AureaResult<String> {
+    let lang = pen.lang;
     let kb = &shared.keyboard;
     let kb_area = Area::new(body.x, body.y + pen.s(8.0), body.w, body.h * 0.46);
     let used = keyboard(pen, kb_area, kb, &Keys::Device, false, hits)?;
     let mut cards: Vec<(&str, String)> = Vec::new();
     if let Some(h) = kb.hello {
-        cards.push(("LAYOUT", format!("{} keys, {} layers", h.keys, h.layers)));
+        cards.push((
+            "LAYOUT",
+            lang.fill(
+                "{} keys, {} layers",
+                &[&h.keys.to_string(), &h.layers.to_string()],
+            ),
+        ));
         cards.push(("MATRIX", format!("{} x {}", h.matrix_rows, h.matrix_cols)));
         cards.push(("PROTOCOL", format!("LCP {}", h.version)));
     }
@@ -1240,22 +1327,24 @@ fn device_tab(
         cards.push(("SCANS", group(d.scans)));
         cards.push((
             "KEY CHANGES",
-            format!(
+            lang.fill(
                 "{} ({} raw)",
-                group(d.stable_transitions),
-                group(d.raw_transitions)
+                &[&group(d.stable_transitions), &group(d.raw_transitions)],
             ),
         ));
         cards.push(("FAULTS", d.faults.to_string()));
         cards.push(("WATCHDOG RESETS", d.watchdog_resets.to_string()));
-        cards.push(("LAST START", lcp::reset::name(d.reset_cause).to_string()));
+        cards.push((
+            "LAST START",
+            lang.tr(lcp::reset::name(d.reset_cause)).to_string(),
+        ));
         cards.push((
             "STORAGE",
-            match d.storage {
+            lang.tr(match d.storage {
                 1 => "ok",
                 2 => "failed",
                 _ => "none",
-            }
+            })
             .to_string(),
         ));
     }
@@ -1272,7 +1361,7 @@ fn device_tab(
             break;
         }
         pen.round(a, pen.s(10.0), color::SURFACE)?;
-        label(pen, name, a.x + pen.s(14.0), a.y + pen.s(12.0))?;
+        label(pen, lang.tr(name), a.x + pen.s(14.0), a.y + pen.s(12.0))?;
         let v = Area::new(
             a.x + pen.s(14.0),
             a.y + pen.s(30.0),
@@ -1286,7 +1375,9 @@ fn device_tab(
         pen.fitted_left(value, v, 15.0, 9.0, c)?;
         let _ = &hits;
     }
-    Ok("Keys light up while pressed: a quick way to check every switch.".into())
+    Ok(lang
+        .tr("Keys light up while pressed: a quick way to check every switch.")
+        .into())
 }
 
 /// `1234567` as `1,234,567`.
