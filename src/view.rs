@@ -1160,22 +1160,78 @@ fn macro_list(
     Ok(())
 }
 
+/// Save and clear under the macro text, or why it cannot be saved.
+fn macro_buttons(
+    pen: &mut Pen<'_>,
+    row: Area,
+    (editing, saved, steps): (bool, bool, usize),
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    let full = steps > lykil::macros::MACRO_STEPS;
+    let mut buttons = Vec::new();
+    if editing && !full {
+        buttons.push((
+            lang.tr("Save to keyboard").to_string(),
+            Hit::SaveMacro,
+            true,
+        ));
+    }
+    if saved {
+        buttons.push((lang.tr("Clear").to_string(), Hit::ClearMacro, false));
+    }
+    let end = pills(pen, row.x, row.y, &buttons, hits)?;
+    if full {
+        let over = (steps - lykil::macros::MACRO_STEPS).to_string();
+        pen.fitted_left(
+            &lang.fill(
+                "Too long to save: {} steps over. Shorten the text.",
+                &[&over],
+            ),
+            Area::new(end, row.y, row.right() - end, row.h),
+            12.0,
+            8.0,
+            color::BAD,
+        )?;
+    }
+    Ok(())
+}
+
+/// `text` split at its line breaks and wherever a line would run past
+/// `room`.
+fn wrap(pen: &mut Pen<'_>, text: &str, font: &aurea::render::Font, room: f32) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in text.split('\n') {
+        let mut current = String::new();
+        for ch in line.chars() {
+            current.push(ch);
+            if pen.width(&current, font) > room && current.chars().count() > 1 {
+                current.pop();
+                out.push(std::mem::take(&mut current));
+                current.push(ch);
+            }
+        }
+        out.push(current);
+    }
+    out
+}
+
 fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> AureaResult<()> {
     let lang = pen.lang;
     let font = pen.font(15.0);
     let mut ty = field.y + pen.s(12.0);
-    let lines: Vec<&str> = text.split('\n').collect();
-    for (n, line) in lines.iter().enumerate() {
-        let shown = if editing && n + 1 == lines.len() {
-            format!("{line}|")
-        } else {
-            (*line).to_string()
-        };
-        pen.text(&shown, field.x + pen.s(12.0), ty, &font, color::TEXT)?;
-        ty += pen.s(22.0);
+    let shown = if editing {
+        format!("{text}|")
+    } else {
+        text.to_string()
+    };
+    let room = field.w - pen.s(24.0);
+    for line in wrap(pen, &shown, &font, room) {
         if ty > field.bottom() - pen.s(20.0) {
             break;
         }
+        pen.text(&line, field.x + pen.s(12.0), ty, &font, color::TEXT)?;
+        ty += pen.s(22.0);
     }
     if text.is_empty() && !editing {
         pen.text(
@@ -1287,19 +1343,13 @@ fn macros_tab(
         &cf,
         if full { color::BAD } else { color::FAINT },
     )?;
-    let y = field.bottom() + pen.s(30.0);
-    let mut buttons = Vec::new();
-    if editing && !full {
-        buttons.push((
-            lang.tr("Save to keyboard").to_string(),
-            Hit::SaveMacro,
-            true,
-        ));
-    }
-    if !saved.is_empty() {
-        buttons.push((lang.tr("Clear").to_string(), Hit::ClearMacro, false));
-    }
-    pills(pen, x, y, &buttons, hits)?;
+    let row = Area::new(
+        x,
+        field.bottom() + pen.s(30.0),
+        editor.right() - x - pen.s(20.0),
+        pen.s(30.0),
+    );
+    macro_buttons(pen, row, (editing, !saved.is_empty(), steps), hits)?;
     macro_note(pen, editor, id)?;
     Ok(if editing {
         lang.tr("Typing into the macro. Save sends it to the keyboard; Esc throws it away.")

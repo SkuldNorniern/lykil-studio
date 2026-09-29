@@ -218,6 +218,10 @@ const KO: &[(&str, &str)] = &[
     ),
     ("{} / {} steps", "{} / {}단계"),
     ("Save to keyboard", "키보드에 저장"),
+    (
+        "Too long to save: {} steps over. Shorten the text.",
+        "너무 길어 저장할 수 없습니다: {}단계 넘습니다. 글을 줄이세요.",
+    ),
     ("Clear", "지우기"),
     (
         "Bind it on the keymap page: Macros group, {}. Typed as a US layout.",
