@@ -55,48 +55,49 @@ fn this_keyboard(
     view::label(pen, lang.tr("THIS KEYBOARD"), x, y)?;
     y += pen.s(18.0);
     let connected = shared.keyboard.connection == Connection::Connected;
-    match shared.lighting().filter(|_| connected) {
-        Some(s) => {
-            let (state, dot) = if s.os_lighting {
-                (lang.tr("Windows may take the LEDs"), color::GOOD)
-            } else {
-                (lang.tr("The keyboard keeps its own effect"), color::DIM)
-            };
-            pen.circle(x + pen.s(5.0), y + pen.s(15.0), pen.s(4.0), dot)?;
-            pen.text(
-                state,
-                x + pen.s(18.0),
-                y + pen.s(7.0),
-                &pen.font(13.0),
-                color::TEXT,
-            )?;
-            let flip = if s.os_lighting {
-                (
-                    lang.tr("Keep the keyboard's effect").to_string(),
-                    Hit::OsLighting(false),
-                    false,
-                )
-            } else {
-                (
-                    lang.tr("Let Windows take the LEDs").to_string(),
-                    Hit::OsLighting(true),
-                    true,
-                )
-            };
-            let font = pen.bold(12.0);
-            let bw = pen.width(&flip.0, &font) + pen.s(24.0);
-            view::pills(pen, card.right() - pen.s(24.0) - bw, y, &[flip], hits)?;
-        }
-        None => {
-            pen.fitted_left(
-                lang.tr("Connect the keyboard to change how it shares its LEDs."),
-                Area::new(x, y, w, pen.s(30.0)),
-                13.0,
-                9.0,
-                color::FAINT,
-            )?;
-        }
-    }
+    let Some(s) = shared.lighting().filter(|_| connected) else {
+        let why = if connected {
+            lang.tr("This keyboard has no lighting")
+        } else {
+            lang.tr("Connect the keyboard to change how it shares its LEDs.")
+        };
+        return pen.fitted_left(
+            why,
+            Area::new(x, y, w, pen.s(30.0)),
+            13.0,
+            9.0,
+            color::FAINT,
+        );
+    };
+    let (state, dot) = if s.os_lighting {
+        (lang.tr("Windows may take the LEDs"), color::GOOD)
+    } else {
+        (lang.tr("The keyboard keeps its own effect"), color::DIM)
+    };
+    pen.circle(x + pen.s(5.0), y + pen.s(15.0), pen.s(4.0), dot)?;
+    pen.text(
+        state,
+        x + pen.s(18.0),
+        y + pen.s(7.0),
+        &pen.font(13.0),
+        color::TEXT,
+    )?;
+    let flip = if s.os_lighting {
+        (
+            lang.tr("Keep the keyboard's effect").to_string(),
+            Hit::OsLighting(false),
+            false,
+        )
+    } else {
+        (
+            lang.tr("Let Windows take the LEDs").to_string(),
+            Hit::OsLighting(true),
+            true,
+        )
+    };
+    let font = pen.bold(12.0);
+    let bw = pen.width(&flip.0, &font) + pen.s(24.0);
+    view::pills(pen, card.right() - pen.s(24.0) - bw, y, &[flip], hits)?;
     Ok(())
 }
 
