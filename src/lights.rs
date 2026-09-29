@@ -60,7 +60,9 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     if kb.lighting.is_some_and(|i| i.host) {
         host_banner(pen, used, settings.os_lighting, hits)?;
     }
-    let top = used.bottom() + pen.s(18.0);
+    let line = Area::new(body.x, used.bottom() + pen.s(10.0), body.w, pen.s(18.0));
+    status_line(pen, line, shared, settings)?;
+    let top = line.bottom() + pen.s(10.0);
     let gap = pen.s(16.0);
     let rest = Area::new(body.x, top, body.w, body.bottom() - top);
     let (effects, picker, side) = panels(pen, rest, gap);
@@ -130,6 +132,67 @@ fn host_banner(pen: &mut Pen<'_>, preview: Area, os: bool, hits: &mut Hits) -> A
         )?;
     }
     Ok(())
+}
+
+/// Who drives the LEDs right now, and whether Studio lights other
+/// devices with this effect too.
+fn status_line(
+    pen: &mut Pen<'_>,
+    line: Area,
+    shared: &Shared,
+    settings: Settings,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    let info = shared.keyboard.lighting;
+    let (text, dot) = match info {
+        Some(i) if !i.drivers_ok => (
+            lang.tr("The LED drivers do not answer, so the keyboard stays dark."),
+            color::BAD,
+        ),
+        Some(i) if i.host && settings.os_lighting => (
+            lang.tr("Windows Dynamic Lighting has the LEDs: this effect is paused."),
+            color::PRESSED,
+        ),
+        Some(i) if i.host => (
+            lang.tr("An app has the LEDs: this effect is paused."),
+            color::PRESSED,
+        ),
+        _ if settings.os_lighting => (
+            lang.tr("The keyboard runs this effect. Windows may take the LEDs at any time."),
+            color::GOOD,
+        ),
+        _ => (lang.tr("The keyboard runs this effect."), color::GOOD),
+    };
+    let mut text = text.to_string();
+    if shared.lamp_sync {
+        let followed = shared.lamps.iter().filter(|l| l.place.follow);
+        let (lit, waiting) = followed.fold((0, 0), |(lit, waiting), l| {
+            if l.open && l.available {
+                (lit + 1, waiting)
+            } else {
+                (lit, waiting + 1)
+            }
+        });
+        if lit > 0 {
+            text.push_str("  ");
+            text.push_str(&lang.fill(
+                "Studio lights {} other devices with it.",
+                &[&lit.to_string()],
+            ));
+        } else if waiting > 0 {
+            text.push_str("  ");
+            text.push_str(lang.tr("Other devices wait for Studio to be in front."));
+        }
+    }
+    let x = line.x + pen.s(4.0);
+    pen.circle(x + pen.s(4.0), line.y + line.h / 2.0, pen.s(4.0), dot)?;
+    pen.fitted_left(
+        &text,
+        Area::new(x + pen.s(16.0), line.y, line.w - pen.s(20.0), line.h),
+        12.0,
+        8.0,
+        color::DIM,
+    )
 }
 
 /// Where the effects, the picker and the sliders go. Wide: three

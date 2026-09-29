@@ -119,6 +119,34 @@ const KO: &[(&str, &str)] = &[
         "대기 중: Studio 창이 앞에 있어야 합니다",
     ),
     ("Studio lights it", "Studio가 켜는 중"),
+    (
+        "The LED drivers do not answer, so the keyboard stays dark.",
+        "LED 드라이버가 응답하지 않아 키보드가 꺼져 있습니다.",
+    ),
+    (
+        "Windows Dynamic Lighting has the LEDs: this effect is paused.",
+        "Windows 동적 조명이 LED를 쓰고 있어 이 효과는 멈춰 있습니다.",
+    ),
+    (
+        "An app has the LEDs: this effect is paused.",
+        "앱이 LED를 쓰고 있어 이 효과는 멈춰 있습니다.",
+    ),
+    (
+        "The keyboard runs this effect. Windows may take the LEDs at any time.",
+        "키보드가 이 효과를 켜고 있습니다. Windows가 언제든 LED를 가져갈 수 있습니다.",
+    ),
+    (
+        "The keyboard runs this effect.",
+        "키보드가 이 효과를 켜고 있습니다.",
+    ),
+    (
+        "Studio lights {} other devices with it.",
+        "Studio가 다른 장치 {}개도 함께 켭니다.",
+    ),
+    (
+        "Other devices wait for Studio to be in front.",
+        "다른 장치는 Studio 창이 앞에 오기를 기다립니다.",
+    ),
     ("Used while Studio lights it.", "Studio가 켤 때 쓰입니다."),
     ("Follow", "따르기"),
     (
