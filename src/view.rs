@@ -420,7 +420,11 @@ pub enum Keys<'a> {
         presses: &'a Presses<'a>,
         brush: Option<Rgb>,
     },
-    Device,
+    /// The key test: what each key does on the first layer, or its id.
+    Device {
+        bindings: &'a [Binding],
+        layers: &'a [String],
+    },
 }
 
 pub fn keyboard(
@@ -503,7 +507,7 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
             color::mix(color::RAISED, color::HOVER, hovered),
             *selected == Some(index),
         ),
-        Keys::Device => (color::RAISED, false),
+        Keys::Device { .. } => (color::RAISED, false),
     };
     let glow = pen.anim.towards(
         Key::Down(index),
@@ -511,7 +515,7 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
         rate::PRESS,
         rate::RELEASE,
     );
-    let face = if matches!(keys, Keys::Device) {
+    let face = if matches!(keys, Keys::Device { .. }) {
         color::mix(face, color::PRESSED, glow * 0.55)
     } else {
         face
@@ -570,7 +574,14 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
                 None => pen.fitted(&main, label, 12.0, 7.0, c),
             }
         }
-        Keys::Device => pen.fitted(id, label, 10.0, 6.0, color::DIM),
+        Keys::Device { bindings, layers } => {
+            let main = bindings
+                .get(index)
+                .map(|b| legend::keycap(*b, layers).0)
+                .filter(|m| !m.is_empty())
+                .unwrap_or_else(|| id.to_string());
+            pen.fitted(&main, label, 11.0, 6.0, color::DIM)
+        }
         Keys::Lighting { .. } => Ok(()),
     }
 }
@@ -1369,7 +1380,13 @@ fn device_tab(
     let lang = pen.lang;
     let kb = &shared.keyboard;
     let kb_area = Area::new(body.x, body.y + pen.s(8.0), body.w, body.h * 0.46);
-    let used = keyboard(pen, kb_area, kb, &Keys::Device, false, hits)?;
+    let layers = kb.layer_names();
+    let empty = Vec::new();
+    let keys = Keys::Device {
+        bindings: kb.keymap.first().unwrap_or(&empty),
+        layers: &layers,
+    };
+    let used = keyboard(pen, kb_area, kb, &keys, false, hits)?;
     let mut cards: Vec<(&str, String)> = Vec::new();
     if let Some(h) = kb.hello {
         cards.push((
