@@ -108,46 +108,55 @@ impl Desk {
     }
 }
 
-/// Gap kept between devices, in metres.
-pub const GAP: f32 = 0.01;
+/// How much of the smaller of two devices may lie under the other: a
+/// mouse half on a pad is fine.
+pub const MAX_OVERLAP: f32 = 0.5;
 
-/// Do two devices (top left, size) overlap, gap included?
-pub fn overlaps(a: (Place, (f32, f32)), b: (Place, (f32, f32))) -> bool {
+/// The share of the smaller device's area the two cover together.
+pub fn overlap(a: (Place, (f32, f32)), b: (Place, (f32, f32))) -> f32 {
     let ((pa, (wa, ha)), (pb, (wb, hb))) = (a, b);
-    pa.x < pb.x + wb + GAP
-        && pb.x < pa.x + wa + GAP
-        && pa.y < pb.y + hb + GAP
-        && pb.y < pa.y + ha + GAP
+    let across = ((pa.x + wa).min(pb.x + wb) - pa.x.max(pb.x)).max(0.0);
+    let down = ((pa.y + ha).min(pb.y + hb) - pa.y.max(pb.y)).max(0.0);
+    let smaller = (wa * ha).min(wb * hb).max(1e-9);
+    across * down / smaller
 }
 
-/// `moving` shifted the least it takes to overlap none of `others`.
+/// Do two devices overlap more than [`MAX_OVERLAP`] allows?
+pub fn overlaps(a: (Place, (f32, f32)), b: (Place, (f32, f32))) -> bool {
+    overlap(a, b) > MAX_OVERLAP + 1e-4
+}
+
+/// `moving` shifted the least it takes to overlap none of `others` more
+/// than allowed.
 pub fn free_spot(moving: (Place, (f32, f32)), others: &[(Place, (f32, f32))]) -> Place {
     let (start, size) = moving;
-    // Places touching some device's side, and the start itself.
+    // Beside each device, or reaching under it by up to half its own size.
     let mut spots = vec![start];
     for &(p, (w, h)) in others {
-        spots.push(Place {
-            x: p.x + w + GAP,
-            ..start
-        });
-        spots.push(Place {
-            x: p.x - size.0 - GAP,
-            ..start
-        });
-        spots.push(Place {
-            y: p.y + h + GAP,
-            ..start
-        });
-        spots.push(Place {
-            y: p.y - size.1 - GAP,
-            ..start
-        });
+        for reach in [0.0, 0.25, 0.5] {
+            spots.push(Place {
+                x: p.x + w - size.0 * reach,
+                ..start
+            });
+            spots.push(Place {
+                x: p.x - size.0 * (1.0 - reach),
+                ..start
+            });
+            spots.push(Place {
+                y: p.y + h - size.1 * reach,
+                ..start
+            });
+            spots.push(Place {
+                y: p.y - size.1 * (1.0 - reach),
+                ..start
+            });
+        }
     }
-    let free = |p: &Place| others.iter().all(|o| !overlaps((*p, size), *o));
+    let fits = |p: &Place| others.iter().all(|o| !overlaps((*p, size), *o));
     let far = |p: &Place| (p.x - start.x).hypot(p.y - start.y);
     spots
         .into_iter()
-        .filter(free)
+        .filter(fits)
         .min_by(|a, b| far(a).total_cmp(&far(b)))
         .unwrap_or(start)
 }
@@ -220,21 +229,25 @@ mod tests {
     }
 
     #[test]
-    fn dropped_devices_slide_off_others() {
+    fn devices_may_overlap_by_half() {
         let at = |x: f32, y: f32| Place {
             x,
             y,
             ..Place::default()
         };
-        let keyboard = (at(0.0, 0.0), (0.4, 0.15));
+        let pad = (at(0.0, 0.0), (0.4, 0.3));
         let mouse = (at(0.35, 0.02), (0.07, 0.12));
-        assert!(overlaps(keyboard, mouse));
-        let p = free_spot(mouse, &[keyboard]);
-        assert!(!overlaps((p, mouse.1), keyboard));
-        // Nearest: just right of the keyboard, same height.
-        assert!((p.x - 0.41).abs() < 1e-5 && (p.y - 0.02).abs() < 1e-6);
+        // Five of seven centimetres over the pad: too much.
+        assert!(overlaps(pad, mouse));
+        let p = free_spot(mouse, &[pad]);
+        assert!(!overlaps((p, mouse.1), pad));
+        // Nearest: half over the edge, same height.
+        assert!((p.x - 0.365).abs() < 1e-5 && (p.y - 0.02).abs() < 1e-6);
+        let half = (at(0.365, 0.02), mouse.1);
+        assert!((overlap(pad, half) - 0.5).abs() < 1e-4);
+        assert!(!overlaps(pad, half));
         let clear = (at(1.0, 0.0), (0.1, 0.1));
-        assert_eq!(free_spot(clear, &[keyboard]), clear.0);
+        assert_eq!(free_spot(clear, &[pad]), clear.0);
     }
 
     #[test]

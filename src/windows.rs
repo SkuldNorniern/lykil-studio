@@ -189,7 +189,11 @@ fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Aure
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let now = lykil::time::Tick((pen.anim.time() * 1000.0) as u32);
     let colours = settings.map(|s| crate::lamps::colours(&shared.lamps, s, now));
-    for (i, d) in shared.lamps.iter().enumerate() {
+    // The picked device last, so it is on top where devices overlap.
+    let picked_id = shared.ui.desk_selected.as_deref();
+    let mut order: Vec<usize> = (0..shared.lamps.len()).collect();
+    order.sort_by_key(|&i| Some(shared.lamps[i].id.as_str()) == picked_id);
+    for (i, d) in order.into_iter().map(|i| (i, &shared.lamps[i])) {
         let rect = Area::new(
             ox + (d.place.x - left) * scale,
             oy + (d.place.y - top) * scale,
