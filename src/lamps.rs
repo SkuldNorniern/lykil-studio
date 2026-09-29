@@ -1,9 +1,12 @@
 //! Other Dynamic Lighting devices through `Windows.Devices.Lights`.
 //! Windows lets an unpackaged app light them only while it is in front.
 
+#[cfg(windows)]
+use std::sync::PoisonError;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread;
+#[cfg(windows)]
 use std::time::{Duration, Instant};
 
 use lykil::lighting::{Effect, Moment, Point, Rgb, Settings, shade};
@@ -38,9 +41,12 @@ pub enum LampCommand {
     Level(String, u8),
 }
 
+#[cfg(windows)]
 const RESCAN: Duration = Duration::from_secs(3);
+#[cfg(windows)]
 const FRAME: Duration = Duration::from_millis(33);
 /// Size of a device Windows has not described yet.
+#[cfg(windows)]
 const UNKNOWN_SIZE: (f32, f32) = (0.12, 0.06);
 
 pub fn spawn(shared: Arc<Mutex<Shared>>) -> Sender<LampCommand> {
