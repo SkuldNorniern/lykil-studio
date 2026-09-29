@@ -201,7 +201,8 @@ mod os {
 
         pub fn settle(&mut self) {
             let mut still = Vec::new();
-            for o in self.opening.drain(..) {
+            let opening = std::mem::take(&mut self.opening);
+            for o in opening {
                 match o.op.Status() {
                     Ok(AsyncStatus::Completed) => {
                         if let Some(d) =
@@ -209,6 +210,7 @@ mod os {
                                 .ok()
                                 .and_then(|a| Device::new(&o.id, o.name.clone(), a))
                         {
+                            self.seat(&d.id, d.size);
                             self.open.push(d);
                         }
                     }
@@ -218,6 +220,25 @@ mod os {
                 }
             }
             self.opening = still;
+        }
+
+        /// Moves a device whose real size just arrived off any it now
+        /// overlaps.
+        fn seat(&mut self, id: &str, size: (f32, f32)) {
+            let Some(place) = self.desk.get(id) else {
+                return;
+            };
+            let others: Vec<(Place, (f32, f32))> = self
+                .open
+                .iter()
+                .filter(|d| d.id != id)
+                .filter_map(|d| Some((self.desk.get(&d.id)?, d.size)))
+                .collect();
+            let spot = crate::desk::free_spot((place, size), &others);
+            if spot != place {
+                self.desk.set(id, spot);
+                self.desk.save();
+            }
         }
 
         pub fn command(&mut self, command: &LampCommand) {

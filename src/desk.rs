@@ -108,6 +108,50 @@ impl Desk {
     }
 }
 
+/// Gap kept between devices, in metres.
+pub const GAP: f32 = 0.01;
+
+/// Do two devices (top left, size) overlap, gap included?
+pub fn overlaps(a: (Place, (f32, f32)), b: (Place, (f32, f32))) -> bool {
+    let ((pa, (wa, ha)), (pb, (wb, hb))) = (a, b);
+    pa.x < pb.x + wb + GAP
+        && pb.x < pa.x + wa + GAP
+        && pa.y < pb.y + hb + GAP
+        && pb.y < pa.y + ha + GAP
+}
+
+/// `moving` shifted the least it takes to overlap none of `others`.
+pub fn free_spot(moving: (Place, (f32, f32)), others: &[(Place, (f32, f32))]) -> Place {
+    let (start, size) = moving;
+    // Places touching some device's side, and the start itself.
+    let mut spots = vec![start];
+    for &(p, (w, h)) in others {
+        spots.push(Place {
+            x: p.x + w + GAP,
+            ..start
+        });
+        spots.push(Place {
+            x: p.x - size.0 - GAP,
+            ..start
+        });
+        spots.push(Place {
+            y: p.y + h + GAP,
+            ..start
+        });
+        spots.push(Place {
+            y: p.y - size.1 - GAP,
+            ..start
+        });
+    }
+    let free = |p: &Place| others.iter().all(|o| !overlaps((*p, size), *o));
+    let far = |p: &Place| (p.x - start.x).hypot(p.y - start.y);
+    spots
+        .into_iter()
+        .filter(free)
+        .min_by(|a, b| far(a).total_cmp(&far(b)))
+        .unwrap_or(start)
+}
+
 /// Maps desk metres onto effect coordinates: the devices' span across
 /// becomes `0..=255`, `y` on the same scale.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -173,6 +217,24 @@ mod tests {
         let first = d.place_new("a", &[]);
         let second = d.place_new("b", &[(first, 0.4)]);
         assert!((second.x - 0.45).abs() < 1e-6);
+    }
+
+    #[test]
+    fn dropped_devices_slide_off_others() {
+        let at = |x: f32, y: f32| Place {
+            x,
+            y,
+            ..Place::default()
+        };
+        let keyboard = (at(0.0, 0.0), (0.4, 0.15));
+        let mouse = (at(0.35, 0.02), (0.07, 0.12));
+        assert!(overlaps(keyboard, mouse));
+        let p = free_spot(mouse, &[keyboard]);
+        assert!(!overlaps((p, mouse.1), keyboard));
+        // Nearest: just right of the keyboard, same height.
+        assert!((p.x - 0.41).abs() < 1e-5 && (p.y - 0.02).abs() < 1e-6);
+        let clear = (at(1.0, 0.0), (0.1, 0.1));
+        assert_eq!(free_spot(clear, &[keyboard]), clear.0);
     }
 
     #[test]

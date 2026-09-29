@@ -203,7 +203,13 @@ fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Aure
             color::mix(color::BACKGROUND, color::RAISED, 0.5)
         };
         pen.round(rect, pen.s(6.0), color::mix(face, color::HOVER, hover))?;
-        if picked {
+        let crowded = shared
+            .lamps
+            .iter()
+            .any(|o| o.id != d.id && crate::desk::overlaps((d.place, d.size), (o.place, o.size)));
+        if crowded {
+            pen.outline(rect, pen.s(6.0), pen.s(2.0), color::BAD)?;
+        } else if picked {
             pen.outline(rect, pen.s(6.0), pen.s(2.0), color::ACCENT)?;
         }
         let dot = (pen.s(2.5) + scale * 0.004).min(pen.s(5.0));

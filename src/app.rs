@@ -612,7 +612,9 @@ impl Shared {
             (MouseButton::Right, true) => self.right_click(),
             (MouseButton::Left, false) => {
                 self.ui.drag = None;
-                self.ui.desk_grab = None;
+                if let Some(grab) = self.ui.desk_grab.take() {
+                    self.drop_device(&grab.id);
+                }
                 self.ui.painting = false;
             }
             _ => return false,
@@ -1090,6 +1092,30 @@ impl Shared {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Slides a dropped device off any it overlaps.
+    fn drop_device(&mut self, id: &str) {
+        let Some(moving) = self.lamps.iter().find(|l| l.id == id) else {
+            return;
+        };
+        let others: Vec<_> = self
+            .lamps
+            .iter()
+            .filter(|l| l.id != id)
+            .map(|l| (l.place, l.size))
+            .collect();
+        let spot = crate::desk::free_spot((moving.place, moving.size), &others);
+        if spot != moving.place {
+            if let Some(l) = self.lamps.iter_mut().find(|l| l.id == id) {
+                l.place = spot;
+            }
+            self.lamp(crate::lamps::LampCommand::Place(
+                id.to_string(),
+                spot.x,
+                spot.y,
+            ));
         }
     }
 
