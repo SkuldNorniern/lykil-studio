@@ -25,6 +25,12 @@ use crate::edit::{self, Hold};
 pub struct Shared {
     pub keyboard: Keyboard,
     pub ui: Ui,
+    /// Other Dynamic Lighting devices, from [`crate::lamps`].
+    pub lamps: Vec<crate::lamps::Lamp>,
+    /// Studio lights the picked ones with the keyboard's effect.
+    pub lamp_sync: bool,
+    /// To the lamps thread.
+    pub lamp_tx: Option<Sender<crate::lamps::LampCommand>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -151,6 +157,10 @@ pub enum Hit {
     LightingSettings,
     /// Opens the folder VIA definitions go in.
     ViaFolder,
+    /// Light other devices with the keyboard's effect, or not.
+    LampSync(bool),
+    /// Switch following for the device at this place in the list.
+    LampFollow(usize),
     /// Which colour the picker edits: the second when true.
     Second(bool),
     LayerKeys(bool),
@@ -617,6 +627,12 @@ impl Shared {
         (self.ui.tab == Tab::Lighting).then(|| self.copy_paste(key, tx))
     }
 
+    fn lamp(&self, command: crate::lamps::LampCommand) {
+        if let Some(tx) = &self.lamp_tx {
+            let _ = tx.send(command);
+        }
+    }
+
     /// Shows `tab`; a new page slides in.
     fn switch_tab(&mut self, tab: Tab) {
         if self.ui.tab != tab {
@@ -757,6 +773,17 @@ impl Shared {
         };
         match hit {
             Hit::Tab(t) => self.switch_tab(t),
+            Hit::LampSync(on) => {
+                self.lamp_sync = on;
+                self.lamp(crate::lamps::LampCommand::Sync(on));
+            }
+            Hit::LampFollow(i) => {
+                if let Some(l) = self.lamps.get_mut(i) {
+                    l.follow = !l.follow;
+                    let command = crate::lamps::LampCommand::Follow(l.id.clone(), l.follow);
+                    self.lamp(command);
+                }
+            }
             Hit::ViaFolder => {
                 let _ = std::process::Command::new("explorer")
                     .arg(crate::via::folder())

@@ -92,6 +92,33 @@ const KO: &[(&str, &str)] = &[
     ("Keep the keyboard's effect", "키보드 효과 유지"),
     ("Open Dynamic Lighting settings", "동적 조명 설정 열기"),
     ("OTHER DEVICES", "다른 장치"),
+    ("Leave them to Windows", "Windows에 맡기기"),
+    (
+        "Light them with the keyboard's effect",
+        "키보드 효과로 켜기",
+    ),
+    (
+        "No Dynamic Lighting devices found.",
+        "동적 조명 장치를 찾지 못했습니다.",
+    ),
+    ("{}, {} lamps", "{}, 조명 {}개"),
+    (
+        "Windows has not handed it over yet",
+        "Windows가 아직 넘겨주지 않았습니다",
+    ),
+    ("Follows the keyboard", "키보드를 따름"),
+    ("Follow the keyboard", "키보드 따르기"),
+    ("keyboard", "키보드"),
+    ("mouse", "마우스"),
+    ("game controller", "게임 컨트롤러"),
+    ("peripheral", "주변기기"),
+    ("chassis", "본체"),
+    ("headset", "헤드셋"),
+    ("device", "장치"),
+    (
+        "Studio lights other devices only while it is the window in front; Windows keeps background control for packaged apps.",
+        "Studio는 창이 앞에 있을 때만 다른 장치를 켭니다. 백그라운드 제어는 Windows가 패키지 앱에만 허용합니다.",
+    ),
     (
         "Mice, cases and other lit devices are set in Windows Settings for now. Driving them from Studio, in step with the keyboard, comes later.",
         "마우스, 케이스 같은 다른 조명 장치는 지금은 Windows 설정에서 정합니다. Studio에서 키보드와 맞춰 켜는 기능은 나중에 들어옵니다.",

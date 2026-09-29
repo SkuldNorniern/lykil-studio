@@ -21,3 +21,7 @@ unsafe_code = "forbid"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Devices_Lights", "Devices_Enumeration", "Foundation", "Foundation_Collections", "Foundation_Numerics", "UI"] }
+windows-future = "0.3.2"

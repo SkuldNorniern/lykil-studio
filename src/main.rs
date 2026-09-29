@@ -16,6 +16,7 @@ mod device;
 mod draw;
 mod edit;
 mod icons;
+mod lamps;
 mod lang;
 mod legend;
 mod lights;
@@ -61,6 +62,8 @@ fn run() -> aurea::AureaResult<()> {
         s.ui.lang = lang::Lang::detect();
     }
     let tx = device::spawn(Arc::clone(&shared), canvas.id());
+    let lamps = lamps::spawn(Arc::clone(&shared));
+    lock(&shared).lamp_tx = Some(lamps);
 
     let drawn = Arc::clone(&shared);
     canvas.set_draw_callback(move |ctx| {
