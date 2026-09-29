@@ -34,10 +34,18 @@ pub enum Tab {
     Macros,
     Lighting,
     Device,
+    /// Windows Dynamic Lighting: the keyboard and other lit devices.
+    Windows,
 }
 
 impl Tab {
-    pub const ALL: [Self; 4] = [Self::Keymap, Self::Macros, Self::Lighting, Self::Device];
+    pub const ALL: [Self; 5] = [
+        Self::Keymap,
+        Self::Macros,
+        Self::Lighting,
+        Self::Device,
+        Self::Windows,
+    ];
 
     pub const fn name(self) -> &'static str {
         match self {
@@ -45,7 +53,13 @@ impl Tab {
             Self::Macros => "Macros",
             Self::Lighting => "Lighting",
             Self::Device => "Device",
+            Self::Windows => "Windows",
         }
+    }
+
+    /// Its place in the bar, from 0.
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
     }
 }
 
@@ -133,6 +147,8 @@ pub enum Hit {
     /// A ready-made or recent colour.
     Swatch(Rgb),
     Colours(Palette),
+    /// Opens Settings > Personalization > Dynamic Lighting.
+    LightingSettings,
     /// Which colour the picker edits: the second when true.
     Second(bool),
     LayerKeys(bool),
@@ -233,6 +249,23 @@ impl Presses {
         }
         self.down = down.to_vec();
     }
+}
+
+/// The tab Ctrl + `key` goes to from `now`: Ctrl+1 to Ctrl+5, and
+/// Ctrl+Tab (with Shift, backwards) round the bar.
+fn tab_shortcut(key: KeyCode, shift: bool, now: Tab) -> Option<Tab> {
+    let n = Tab::ALL.len();
+    let at = match key {
+        KeyCode::Key1 => 0,
+        KeyCode::Key2 => 1,
+        KeyCode::Key3 => 2,
+        KeyCode::Key4 => 3,
+        KeyCode::Key5 => 4,
+        KeyCode::Tab if shift => (now.index() + n - 1) % n,
+        KeyCode::Tab => (now.index() + 1) % n,
+        _ => return None,
+    };
+    Tab::ALL.get(at).copied()
 }
 
 /// Colours offered next to the picker.
@@ -411,9 +444,9 @@ impl Shared {
             modifiers,
         } = *event
             && modifiers.ctrl
-            && self.ui.tab == Tab::Lighting
+            && let Some(redraw) = self.shortcut(key, modifiers.shift, tx)
         {
-            return self.copy_paste(key, tx);
+            return redraw;
         }
         match *event {
             WindowEvent::MouseMove { x, y } => {
@@ -545,15 +578,14 @@ impl Shared {
                 self.pick(c, tx);
             }
             Some(Hit::Tab(_)) => {
-                let at = Tab::ALL.iter().position(|t| *t == self.ui.tab).unwrap_or(0);
+                let at = self.ui.tab.index();
                 let next = if up {
                     at.checked_sub(1)
                 } else {
                     Some(at + 1).filter(|n| *n < Tab::ALL.len())
                 };
                 if let Some(n) = next {
-                    self.ui.anim.set(Key::Page, 0.0);
-                    self.ui.tab = Tab::ALL[n];
+                    self.switch_tab(Tab::ALL[n]);
                 }
             }
             Some(Hit::Layer(_)) => {
@@ -571,6 +603,24 @@ impl Shared {
             _ => return false,
         }
         true
+    }
+
+    /// Ctrl with `key`: switching pages, or copy and paste on the
+    /// lighting page. `None` if it means nothing.
+    fn shortcut(&mut self, key: KeyCode, shift: bool, tx: &Sender<Command>) -> Option<bool> {
+        if let Some(tab) = tab_shortcut(key, shift, self.ui.tab) {
+            self.switch_tab(tab);
+            return Some(true);
+        }
+        (self.ui.tab == Tab::Lighting).then(|| self.copy_paste(key, tx))
+    }
+
+    /// Shows `tab`; a new page slides in.
+    fn switch_tab(&mut self, tab: Tab) {
+        if self.ui.tab != tab {
+            self.ui.anim.set(Key::Page, 0.0);
+        }
+        self.ui.tab = tab;
     }
 
     fn mouse_button(&mut self, button: MouseButton, pressed: bool, tx: &Sender<Command>) -> bool {
@@ -704,11 +754,12 @@ impl Shared {
             return;
         };
         match hit {
-            Hit::Tab(t) => {
-                if self.ui.tab != t {
-                    self.ui.anim.set(Key::Page, 0.0);
-                }
-                self.ui.tab = t;
+            Hit::Tab(t) => self.switch_tab(t),
+            Hit::LightingSettings => {
+                // Windows opens the settings page for the ms-settings: link.
+                let _ = std::process::Command::new("explorer")
+                    .arg("ms-settings:personalization-lighting")
+                    .spawn();
             }
             Hit::Lang => self.ui.lang = self.ui.lang.other(),
             Hit::Layer(l) => self.ui.layer = l,
@@ -1048,6 +1099,23 @@ mod tests {
             p.press(0, f32::from(u8::try_from(i).unwrap()));
         }
         assert_eq!(p.recent.len(), RIPPLES);
+    }
+
+    #[test]
+    fn tab_shortcuts_go_round() {
+        assert_eq!(
+            tab_shortcut(KeyCode::Key3, false, Tab::Keymap),
+            Some(Tab::Lighting)
+        );
+        assert_eq!(
+            tab_shortcut(KeyCode::Tab, false, Tab::Windows),
+            Some(Tab::Keymap)
+        );
+        assert_eq!(
+            tab_shortcut(KeyCode::Tab, true, Tab::Keymap),
+            Some(Tab::Windows)
+        );
+        assert_eq!(tab_shortcut(KeyCode::A, false, Tab::Keymap), None);
     }
 
     #[test]

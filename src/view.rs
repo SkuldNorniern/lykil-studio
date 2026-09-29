@@ -18,6 +18,7 @@ use crate::draw::{Area, Pen, color};
 use crate::edit::{self, Hold};
 use crate::legend;
 use crate::lights::{self, Presses};
+use crate::{icons, windows};
 
 const HEADER: f32 = 60.0;
 const FOOTER: f32 = 30.0;
@@ -66,12 +67,15 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         full.w,
         full.h,
     );
-    let status = if shared.keyboard.connection == Connection::Connected {
+    let status = if shared.ui.tab == Tab::Windows {
+        windows::tab(&mut pen, body, shared, &mut hits)?
+    } else if shared.keyboard.connection == Connection::Connected {
         match shared.ui.tab {
             Tab::Keymap => keymap_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Macros => macros_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Lighting => lights::tab(&mut pen, body, shared, &mut hits)?,
             Tab::Device => device_tab(&mut pen, body, shared, &mut hits)?,
+            Tab::Windows => String::new(),
         }
     } else {
         waiting(&mut pen, body, &shared.keyboard)?;
@@ -140,7 +144,7 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     pen.text(name, x, pen.s(28.0), &pen.bold(17.0), color::TEXT)?;
 
     // Tabs, centred.
-    let tab_w = pen.s(100.0);
+    let tab_w = pen.s(118.0);
     let tab_h = pen.s(34.0);
     #[allow(clippy::cast_precision_loss)]
     let total = tab_w * Tab::ALL.len() as f32 + pen.s(8.0);
@@ -173,7 +177,7 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
         #[allow(clippy::cast_precision_loss)]
         let near = 1.0 - (at - i as f32).abs().min(1.0);
         let fg = color::mix(color::DIM, color::ACCENT_TEXT, near);
-        pen.centred(lang.tr(tab.name()), a, &pen.bold(13.0), fg)?;
+        tab_label(pen, a, tab, fg)?;
         hits.push((a, Hit::Tab(tab)));
     }
 
@@ -220,6 +224,29 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     pen.centred(other, lang, &font, color::DIM)?;
     hits.push((lang, Hit::Lang));
     Ok(())
+}
+
+/// A tab's icon and name, centred together; the name shrinks to fit.
+fn tab_label(pen: &mut Pen<'_>, a: Area, tab: Tab, fg: Color) -> AureaResult<()> {
+    let text = pen.lang.tr(tab.name());
+    let icon = pen.s(14.0);
+    let gap = pen.s(7.0);
+    let room = a.w - icon - gap - pen.s(16.0);
+    let mut font = pen.bold(13.0);
+    while pen.width(text, &font) > room && font.size > pen.s(9.0) {
+        font.size -= pen.s(0.5);
+    }
+    let tw = pen.width(text, &font);
+    let x = a.x + (a.w - icon - gap - tw) / 2.0;
+    let cy = a.y + a.h / 2.0;
+    icons::tab(pen, tab, Area::new(x, cy - icon / 2.0, icon, icon), fg)?;
+    pen.text(
+        text,
+        x + icon + gap,
+        a.y + (a.h - font.size) / 2.0,
+        &font,
+        fg,
+    )
 }
 
 /// `status` from the page, unless there is a `notice` or a refused change.

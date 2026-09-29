@@ -145,6 +145,21 @@ impl Pen<'_> {
         )
     }
 
+    /// A filled polygon through `points`.
+    pub fn polygon(&mut self, points: &[(f32, f32)], c: Color) -> AureaResult<()> {
+        let mut path = Path::new();
+        for (i, &(x, y)) in points.iter().enumerate() {
+            let p = Point::new(x, y);
+            path.commands.push(if i == 0 {
+                PathCommand::MoveTo(p)
+            } else {
+                PathCommand::LineTo(p)
+            });
+        }
+        path.commands.push(PathCommand::Close);
+        self.ctx.draw_path(&path, &fill(c))
+    }
+
     pub fn circle(&mut self, x: f32, y: f32, r: f32, c: Color) -> AureaResult<()> {
         self.ctx.draw_circle(Point::new(x, y), r, &fill(c))
     }

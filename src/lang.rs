@@ -78,6 +78,32 @@ const KO: &[(&str, &str)] = &[
     ("Macros", "매크로"),
     ("Lighting", "조명"),
     ("Device", "장치"),
+    (
+        "Your Lykil keyboard is a Dynamic Lighting device: Windows can light it together with your other devices.",
+        "Lykil 키보드는 동적 조명 장치입니다. Windows가 다른 장치와 함께 불을 켤 수 있습니다.",
+    ),
+    ("THIS KEYBOARD", "이 키보드"),
+    ("Windows may take the LEDs", "Windows가 LED를 제어함"),
+    (
+        "The keyboard keeps its own effect",
+        "키보드가 자체 효과를 유지함",
+    ),
+    ("Let Windows take the LEDs", "Windows에 LED 맡기기"),
+    ("Keep the keyboard's effect", "키보드 효과 유지"),
+    ("Open Dynamic Lighting settings", "동적 조명 설정 열기"),
+    ("OTHER DEVICES", "다른 장치"),
+    (
+        "Mice, cases and other lit devices are set in Windows Settings for now. Driving them from Studio, in step with the keyboard, comes later.",
+        "마우스, 케이스 같은 다른 조명 장치는 지금은 Windows 설정에서 정합니다. Studio에서 키보드와 맞춰 켜는 기능은 나중에 들어옵니다.",
+    ),
+    (
+        "Connect the keyboard to change how it shares its LEDs.",
+        "LED를 어떻게 맡길지 바꾸려면 키보드를 연결하세요.",
+    ),
+    (
+        "Ctrl+1 to Ctrl+5 or Ctrl+Tab switch pages",
+        "Ctrl+1~5 또는 Ctrl+Tab으로 화면을 바꿉니다",
+    ),
     ("Connected", "연결됨"),
     ("Looking for a keyboard", "키보드를 찾는 중"),
     ("Connection lost", "연결 끊김"),

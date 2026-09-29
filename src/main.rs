@@ -15,10 +15,12 @@ mod colour;
 mod device;
 mod draw;
 mod edit;
+mod icons;
 mod lang;
 mod legend;
 mod lights;
 mod view;
+mod windows;
 
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, PoisonError};
