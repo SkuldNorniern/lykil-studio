@@ -35,6 +35,8 @@ pub enum Tab {
 }
 
 impl Tab {
+    /// Dynamic Lighting is Windows only, so is its tab.
+    #[cfg(windows)]
     pub const ALL: [Self; 5] = [
         Self::Keymap,
         Self::Macros,
@@ -42,6 +44,8 @@ impl Tab {
         Self::Device,
         Self::Windows,
     ];
+    #[cfg(not(windows))]
+    pub const ALL: [Self; 4] = [Self::Keymap, Self::Macros, Self::Lighting, Self::Device];
 
     pub const fn name(self) -> &'static str {
         match self {
@@ -1180,14 +1184,9 @@ mod tests {
             tab_shortcut(KeyCode::Key3, false, Tab::Keymap),
             Some(Tab::Lighting)
         );
-        assert_eq!(
-            tab_shortcut(KeyCode::Tab, false, Tab::Windows),
-            Some(Tab::Keymap)
-        );
-        assert_eq!(
-            tab_shortcut(KeyCode::Tab, true, Tab::Keymap),
-            Some(Tab::Windows)
-        );
+        let last = Tab::ALL[Tab::ALL.len() - 1];
+        assert_eq!(tab_shortcut(KeyCode::Tab, false, last), Some(Tab::Keymap));
+        assert_eq!(tab_shortcut(KeyCode::Tab, true, Tab::Keymap), Some(last));
         assert_eq!(tab_shortcut(KeyCode::A, false, Tab::Keymap), None);
     }
 
