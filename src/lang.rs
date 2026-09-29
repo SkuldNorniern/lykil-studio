@@ -105,6 +105,27 @@ const KO: &[(&str, &str)] = &[
         "Ctrl+1~5 또는 Ctrl+Tab으로 화면을 바꿉니다",
     ),
     ("Connected", "연결됨"),
+    ("Connected over VIA", "VIA로 연결됨"),
+    ("VIA definition needed", "VIA 정의 파일 필요"),
+    ("{} speaks VIA", "{}은(는) VIA를 씁니다"),
+    (
+        "Studio needs its VIA definition, the JSON VIA's Design tab loads (vendor {}, product {}).",
+        "Studio에는 VIA 정의 파일이 필요합니다. VIA의 Design 탭에서 여는 JSON입니다 (벤더 {}, 제품 {}).",
+    ),
+    (
+        "Put the file in this folder; Studio picks it up by itself:",
+        "이 폴더에 파일을 넣으면 Studio가 알아서 읽습니다:",
+    ),
+    ("Open the folder", "폴더 열기"),
+    ("USB ID", "USB ID"),
+    (
+        "VIA keyboards have no lighting or macros in Studio",
+        "VIA 키보드는 Studio에서 조명과 매크로를 쓸 수 없습니다",
+    ),
+    (
+        "VIA has no keycode for this binding",
+        "VIA에는 이 동작의 키코드가 없습니다",
+    ),
     ("Looking for a keyboard", "키보드를 찾는 중"),
     ("Connection lost", "연결 끊김"),
     ("No keyboard", "키보드 없음"),

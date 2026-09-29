@@ -299,6 +299,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lykil-qmk"
+version = "0.1.0"
+dependencies = [
+ "lykil",
+ "lykil-protocol",
+]
+
+[[package]]
 name = "lykil-studio"
 version = "0.1.0"
 dependencies = [
@@ -307,6 +315,7 @@ dependencies = [
  "lykil-config",
  "lykil-device",
  "lykil-protocol",
+ "lykil-qmk",
  "sys-locale",
 ]
 

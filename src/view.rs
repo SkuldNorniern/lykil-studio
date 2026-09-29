@@ -78,7 +78,7 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
             Tab::Windows => String::new(),
         }
     } else {
-        waiting(&mut pen, body, &shared.keyboard)?;
+        waiting(&mut pen, body, &shared.keyboard, &mut hits)?;
         String::new()
     };
     if arrived < 1.0 {
@@ -88,6 +88,11 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
             1.0 - arrived,
         )?;
     }
+    // A tab under the mouse says what it is; narrow tabs show no name.
+    let status = match shared.ui.hovered() {
+        Some(Hit::Tab(tab)) => format!("{}   Ctrl+{}", pen.lang.tr(tab.name()), tab.index() + 1),
+        _ => status,
+    };
     footer(
         &mut pen,
         (w, h),
@@ -124,66 +129,39 @@ fn repaint_everything(pen: &mut Pen<'_>, w: f32, h: f32, frame: u32) -> AureaRes
 }
 
 fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaResult<()> {
-    let lang = pen.lang;
     pen.fill(Area::new(0.0, 0.0, w, pen.s(HEADER)), color::SURFACE)?;
     pen.fill(Area::new(0.0, pen.s(HEADER) - 1.0, w, 1.0), color::BORDER)?;
-    let x = pen.s(MARGIN);
-    pen.text(
-        "LYKIL STUDIO",
-        x,
-        pen.s(12.0),
-        &pen.bold(11.0),
-        color::ACCENT,
-    )?;
     let kb = &shared.keyboard;
+    let left_end = title(pen, kb)?;
+    let right_start = status(pen, w, kb, hits)?;
+    tab_bar(pen, (left_end, right_start, w), shared.ui.tab, hits)
+}
+
+/// "LYKIL STUDIO" and the keyboard's name at the left; returns where they
+/// end.
+fn title(pen: &mut Pen<'_>, kb: &Keyboard) -> AureaResult<f32> {
+    let x = pen.s(MARGIN);
+    let small = pen.bold(11.0);
+    pen.text("LYKIL STUDIO", x, pen.s(12.0), &small, color::ACCENT)?;
     let name = if kb.connection == Connection::Connected {
         kb.name.as_str()
     } else {
-        lang.tr("No keyboard")
+        pen.lang.tr("No keyboard")
     };
-    pen.text(name, x, pen.s(28.0), &pen.bold(17.0), color::TEXT)?;
+    let big = pen.bold(17.0);
+    pen.text(name, x, pen.s(28.0), &big, color::TEXT)?;
+    let wide = pen.width(name, &big).max(pen.width("LYKIL STUDIO", &small));
+    Ok(x + wide)
+}
 
-    // Tabs, centred.
-    let tab_w = pen.s(118.0);
-    let tab_h = pen.s(34.0);
-    #[allow(clippy::cast_precision_loss)]
-    let total = tab_w * Tab::ALL.len() as f32 + pen.s(8.0);
-    let bar = Area::new((w - total) / 2.0, pen.s(13.0), total, tab_h + pen.s(8.0));
-    pen.round(bar, pen.s(10.0), color::BACKGROUND)?;
-    let pad = pen.s(4.0);
-    let tab_at = |i: f32| Area::new(bar.x + pad + tab_w * i, bar.y + pad, tab_w, tab_h);
-    let current = Tab::ALL
-        .iter()
-        .position(|t| *t == shared.ui.tab)
-        .unwrap_or(0);
-    #[allow(clippy::cast_precision_loss)]
-    let at = pen.anim.to(Key::TabBar, current as f32, rate::SLIDE);
-    for (i, tab) in Tab::ALL.into_iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let a = tab_at(i as f32);
-        let t = pen.hover(a, Hit::Tab(tab));
-        if t > 0.01 {
-            pen.round(
-                a,
-                pen.s(8.0),
-                color::mix(color::BACKGROUND, color::RAISED, t),
-            )?;
-        }
-    }
-    pen.round(tab_at(at), pen.s(8.0), color::ACCENT)?;
-    for (i, tab) in Tab::ALL.into_iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let a = tab_at(i as f32);
-        #[allow(clippy::cast_precision_loss)]
-        let near = 1.0 - (at - i as f32).abs().min(1.0);
-        let fg = color::mix(color::DIM, color::ACCENT_TEXT, near);
-        tab_label(pen, a, tab, fg)?;
-        hits.push((a, Hit::Tab(tab)));
-    }
-
-    // Connection, right.
+/// The connection and the language switch at the right; returns where
+/// they start.
+fn status(pen: &mut Pen<'_>, w: f32, kb: &Keyboard, hits: &mut Hits) -> AureaResult<f32> {
+    let lang = pen.lang;
     let (text, dot) = match &kb.connection {
+        Connection::Connected if kb.via.is_some() => (lang.tr("Connected over VIA"), color::GOOD),
         Connection::Connected => (lang.tr("Connected"), color::GOOD),
+        Connection::NeedsDefinition => (lang.tr("VIA definition needed"), color::PRESSED),
         Connection::Searching => (lang.tr("Looking for a keyboard"), color::DIM),
         Connection::Lost(_) => (lang.tr("Connection lost"), color::BAD),
     };
@@ -209,27 +187,85 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     // In its own language's font: the current one may not have its letters.
     let font = aurea::render::Font::new(lang.other().font_family(), pen.s(12.0));
     let lw = pen.width(other, &font) + pen.s(20.0);
-    let lang = Area::new(
+    let switch = Area::new(
         right - tw - pen.s(28.0) - lw,
         pen.s(HEADER / 2.0 - 12.0),
         lw,
         pen.s(24.0),
     );
-    let t = pen.hover(lang, Hit::Lang);
+    let t = pen.hover(switch, Hit::Lang);
     pen.round(
-        lang,
+        switch,
         pen.s(12.0),
         color::mix(color::RAISED, color::HOVER, t),
     )?;
-    pen.centred(other, lang, &font, color::DIM)?;
-    hits.push((lang, Hit::Lang));
+    pen.centred(other, switch, &font, color::DIM)?;
+    hits.push((switch, Hit::Lang));
+    Ok(switch.x)
+}
+
+/// The tabs between `left` and `right`, centred when there is room. When
+/// the window is narrow they shrink, and then show only their icons.
+fn tab_bar(
+    pen: &mut Pen<'_>,
+    (left, right, width): (f32, f32, f32),
+    current: Tab,
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    #[allow(clippy::cast_precision_loss)]
+    let count = Tab::ALL.len() as f32;
+    let gap = pen.s(20.0);
+    let room = (right - left - 2.0 * gap).max(0.0);
+    let tab_w = ((room - pen.s(8.0)) / count).clamp(pen.s(40.0), pen.s(118.0));
+    let tab_h = pen.s(34.0);
+    let total = tab_w * count + pen.s(8.0);
+    let centred = (width - total) / 2.0;
+    let x = centred
+        .max(left + gap)
+        .min((right - gap - total).max(left + gap));
+    let bar = Area::new(x, pen.s(13.0), total, tab_h + pen.s(8.0));
+    pen.round(bar, pen.s(10.0), color::BACKGROUND)?;
+    let pad = pen.s(4.0);
+    let tab_at = |i: f32| Area::new(bar.x + pad + tab_w * i, bar.y + pad, tab_w, tab_h);
+    #[allow(clippy::cast_precision_loss)]
+    let at = pen
+        .anim
+        .to(Key::TabBar, current.index() as f32, rate::SLIDE);
+    for (i, tab) in Tab::ALL.into_iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = tab_at(i as f32);
+        let t = pen.hover(a, Hit::Tab(tab));
+        if t > 0.01 {
+            pen.round(
+                a,
+                pen.s(8.0),
+                color::mix(color::BACKGROUND, color::RAISED, t),
+            )?;
+        }
+    }
+    pen.round(tab_at(at), pen.s(8.0), color::ACCENT)?;
+    for (i, tab) in Tab::ALL.into_iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = tab_at(i as f32);
+        #[allow(clippy::cast_precision_loss)]
+        let near = 1.0 - (at - i as f32).abs().min(1.0);
+        let fg = color::mix(color::DIM, color::ACCENT_TEXT, near);
+        tab_label(pen, a, tab, fg)?;
+        hits.push((a, Hit::Tab(tab)));
+    }
     Ok(())
 }
 
-/// A tab's icon and name, centred together; the name shrinks to fit.
+/// A tab's icon and name, centred together; the name shrinks to fit,
+/// and a tab too narrow for it shows the icon alone.
 fn tab_label(pen: &mut Pen<'_>, a: Area, tab: Tab, fg: Color) -> AureaResult<()> {
     let text = pen.lang.tr(tab.name());
     let icon = pen.s(14.0);
+    let cy = a.y + a.h / 2.0;
+    if a.w < pen.s(84.0) {
+        let x = a.x + (a.w - icon) / 2.0;
+        return icons::tab(pen, tab, Area::new(x, cy - icon / 2.0, icon, icon), fg);
+    }
     let gap = pen.s(7.0);
     let room = a.w - icon - gap - pen.s(16.0);
     let mut font = pen.bold(13.0);
@@ -238,7 +274,6 @@ fn tab_label(pen: &mut Pen<'_>, a: Area, tab: Tab, fg: Color) -> AureaResult<()>
     }
     let tw = pen.width(text, &font);
     let x = a.x + (a.w - icon - gap - tw) / 2.0;
-    let cy = a.y + a.h / 2.0;
     icons::tab(pen, tab, Area::new(x, cy - icon / 2.0, icon, icon), fg)?;
     pen.text(
         text,
@@ -306,8 +341,11 @@ fn uptime(ms: u32) -> String {
     }
 }
 
-fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard) -> AureaResult<()> {
+fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard, hits: &mut Hits) -> AureaResult<()> {
     let lang = pen.lang;
+    if kb.connection == Connection::NeedsDefinition {
+        return needs_definition(pen, body, kb, hits);
+    }
     let card = Area::new(
         body.x + (body.w - pen.s(420.0)) / 2.0,
         body.y + body.h / 2.0 - pen.s(70.0),
@@ -335,6 +373,51 @@ fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard) -> AureaResult<()> {
         pen.s(20.0),
     );
     pen.fitted(&line, sub, 13.0, 9.0, color::DIM)
+}
+
+/// A VIA keyboard without its definition: where to put the file.
+fn needs_definition(
+    pen: &mut Pen<'_>,
+    body: Area,
+    kb: &Keyboard,
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    let card = Area::new(
+        body.x + (body.w - pen.s(560.0)) / 2.0,
+        body.y + body.h / 2.0 - pen.s(110.0),
+        pen.s(560.0),
+        pen.s(220.0),
+    );
+    pen.round(card, pen.s(14.0), color::SURFACE)?;
+    let x = card.x + pen.s(28.0);
+    let w = card.w - pen.s(56.0);
+    let (vid, pid) = kb.via.map_or((0, 0), |v| v.ids);
+    pen.text(
+        &lang.fill("{} speaks VIA", &[&kb.name]),
+        x,
+        card.y + pen.s(26.0),
+        &pen.bold(18.0),
+        color::TEXT,
+    )?;
+    let lines = [
+        lang.fill(
+            "Studio needs its VIA definition, the JSON VIA's Design tab loads (vendor {}, product {}).",
+            &[&format!("0x{vid:04X}"), &format!("0x{pid:04X}")],
+        ),
+        lang.tr("Put the file in this folder; Studio picks it up by itself:")
+            .to_string(),
+        crate::via::folder().display().to_string(),
+    ];
+    for (i, line) in lines.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = Area::new(x, card.y + pen.s(66.0 + 24.0 * i as f32), w, pen.s(18.0));
+        let c = if i == 2 { color::ACCENT } else { color::DIM };
+        pen.fitted_left(line, a, 12.0, 8.0, c)?;
+    }
+    let open = [(lang.tr("Open the folder").to_string(), Hit::ViaFolder, true)];
+    pills(pen, x, card.bottom() - pen.s(52.0), &open, hits)?;
+    Ok(())
 }
 
 /// How keys are coloured and labelled.
@@ -1265,6 +1348,11 @@ fn device_tab(
         ));
         cards.push(("MATRIX", format!("{} x {}", h.matrix_rows, h.matrix_cols)));
         cards.push(("PROTOCOL", format!("LCP {}", h.version)));
+    }
+    if let Some(v) = kb.via {
+        cards.push(("PROTOCOL", format!("VIA {}", v.protocol)));
+        let (vid, pid) = v.ids;
+        cards.push(("USB ID", format!("{vid:04X}:{pid:04X}")));
     }
     match &kb.firmware {
         Some(fw) => {

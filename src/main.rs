@@ -19,6 +19,7 @@ mod icons;
 mod lang;
 mod legend;
 mod lights;
+mod via;
 mod view;
 mod windows;
 

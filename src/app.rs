@@ -149,6 +149,8 @@ pub enum Hit {
     Colours(Palette),
     /// Opens Settings > Personalization > Dynamic Lighting.
     LightingSettings,
+    /// Opens the folder VIA definitions go in.
+    ViaFolder,
     /// Which colour the picker edits: the second when true.
     Second(bool),
     LayerKeys(bool),
@@ -755,6 +757,11 @@ impl Shared {
         };
         match hit {
             Hit::Tab(t) => self.switch_tab(t),
+            Hit::ViaFolder => {
+                let _ = std::process::Command::new("explorer")
+                    .arg(crate::via::folder())
+                    .spawn();
+            }
             Hit::LightingSettings => {
                 // Windows opens the settings page for the ms-settings: link.
                 let _ = std::process::Command::new("explorer")

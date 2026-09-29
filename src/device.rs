@@ -1,7 +1,8 @@
 //! The keyboard, on a background thread.
 //!
 //! The thread finds a Lykil keyboard, reads what it is (description,
-//! keymap, lighting) and then keeps the matrix and counters fresh. The UI
+//! keymap, lighting) and then keeps the matrix and counters fresh. A
+//! keyboard that speaks only VIA goes to [`crate::via`]. The UI
 //! asks for changes with [`Command`]s; the thread sends them between
 //! polls, and a run of lighting changes (a slider being dragged) goes out
 //! as one.
@@ -15,7 +16,7 @@ use aurea::render::{CanvasId, request_canvas_redraw};
 use lykil::binding::Binding;
 use lykil::lighting::{Rgb, Settings};
 use lykil::macros::{MACROS, Step};
-use lykil_device::{Device, DeviceError, FirmwareInfo};
+use lykil_device::{Device, DeviceError, FirmwareInfo, Found, open_any};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp::{Diagnostics, Hello, LightingInfo, capability};
 
@@ -32,6 +33,8 @@ pub struct Keyboard {
     pub connection: Connection,
     pub name: String,
     pub hello: Option<Hello>,
+    /// Set for a keyboard that speaks only VIA.
+    pub via: Option<crate::via::Via>,
     /// What firmware runs; `None` for firmware too old to say.
     pub firmware: Option<FirmwareInfo>,
     /// What the keyboard says about itself: keys, layers, geometry.
@@ -74,6 +77,8 @@ pub enum Connection {
     #[default]
     Searching,
     Connected,
+    /// A VIA keyboard whose definition is not in [`crate::via::folder`].
+    NeedsDefinition,
     /// Lost, with the reason.
     Lost(String),
 }
@@ -103,9 +108,19 @@ pub fn spawn(shared: Arc<Mutex<Shared>>, canvas: CanvasId) -> Sender<Command> {
     let (tx, rx) = channel();
     thread::spawn(move || {
         loop {
-            match Device::open() {
-                Ok(device) => {
-                    let reason = poll(device, &rx, &shared, canvas);
+            // LYKIL_STUDIO_VIA=1 talks VIA even to a keyboard that speaks
+            // LCP, to try the VIA path on a Lykil keyboard.
+            let found = if std::env::var_os("LYKIL_STUDIO_VIA").is_some() {
+                lykil_device::via::open().map(Found::Via)
+            } else {
+                open_any()
+            };
+            match found {
+                Ok(found) => {
+                    let reason = match found {
+                        Found::Lykil(device) => poll(device, &rx, &shared, canvas),
+                        Found::Via(device) => crate::via::poll(device, &rx, &shared, canvas),
+                    };
                     update(&shared, canvas, |k| {
                         *k = Keyboard {
                             connection: Connection::Lost(reason),
@@ -295,7 +310,7 @@ fn refused(
 }
 
 /// Applies `change`; asks for a redraw only if something changed.
-fn update(shared: &Arc<Mutex<Shared>>, canvas: CanvasId, change: impl FnOnce(&mut Keyboard)) {
+pub fn update(shared: &Arc<Mutex<Shared>>, canvas: CanvasId, change: impl FnOnce(&mut Keyboard)) {
     let changed = {
         let mut s = shared.lock().unwrap_or_else(PoisonError::into_inner);
         let before = s.keyboard.clone();
