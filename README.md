@@ -6,6 +6,8 @@ Lykil Studio: manage lykil keyboards. built on [Aurea](https://github.com/SkuldN
 cargo run --release
 ```
 
+on Linux, hidapi needs `libudev-dev` (`sudo apt install libudev-dev`), and a normal user needs a udev rule to open the keyboard's hidraw node. the Windows tab only exists on Windows. macOS builds but stalls right after the window opens, not solved yet.
+
 a lykil keyboard needs no files: it describes itself over LCP (name, layers, keys with position, size, matrix cell and LED). a keyboard that only speaks VIA (stock QMK) works too, see below. when a keyboard speaks both, Studio uses LCP.
 
 pages (Ctrl+1 to Ctrl+5, Ctrl+Tab, or the mouse wheel over the tabs):
@@ -18,7 +20,7 @@ pages (Ctrl+1 to Ctrl+5, Ctrl+Tab, or the mouse wheel over the tabs):
 
 ## VIA only keyboards
 
-VIA keyboards do not describe themselves, so Studio needs the keyboard's VIA definition: the JSON VIA's Design tab loads. put it in `%APPDATA%\Lykil Studio\via\` (the page shows the folder and a button to open it). Studio matches it by USB vendor and product id and picks it up by itself.
+VIA keyboards do not describe themselves, so Studio needs the keyboard's VIA definition: the JSON VIA's Design tab loads. put it in the `via` folder of Studio's data folder: `%APPDATA%\Lykil Studio` on Windows, `~/Library/Application Support/Lykil Studio` on macOS, `~/.config/Lykil Studio` on Linux (the page shows the folder and a button to open it). Studio matches it by USB vendor and product id and picks it up by itself.
 
 then the keymap page works as usual, over VIA: keycodes are read and written as QMK keycodes and translated with `lykil-qmk`. a binding VIA has no keycode for is refused. lighting and macros stay lykil only.
 
@@ -26,7 +28,7 @@ then the keymap page works as usual, over VIA: keycodes are read and written as 
 
 ## notes
 
-english and korean: follows the system language, `LYKIL_LANG=ko` or `en` overrides, and the button in the header switches. text is looked up in `lang.rs`; anything missing stays english. korean uses Malgun Gothic, since the renderer takes one font per text.
+english and korean: follows the system language, `LYKIL_LANG=ko` or `en` overrides, and the button in the header switches. text is looked up in `lang.rs`; anything missing stays english. korean uses Malgun Gothic (Apple SD Gothic Neo on macOS, Noto Sans CJK on Linux), since the renderer takes one font per text.
 
 close VIA while Studio runs: every program with the raw HID interface open gets every answer.
 
