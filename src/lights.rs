@@ -63,16 +63,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     let top = used.bottom() + pen.s(18.0);
     let gap = pen.s(16.0);
     let rest = Area::new(body.x, top, body.w, body.bottom() - top);
-    let effects_w = (rest.w * 0.42).max(pen.s(360.0));
-    let picker_w = pen.s(360.0);
-    let effects = Area::new(rest.x, rest.y, effects_w, rest.h);
-    let picker = Area::new(effects.right() + gap, rest.y, picker_w, rest.h);
-    let side = Area::new(
-        picker.right() + gap,
-        rest.y,
-        rest.right() - picker.right() - gap,
-        rest.h,
-    );
+    let (effects, picker, side) = panels(pen, rest, gap);
     for a in [effects, picker, side] {
         pen.round(a, pen.s(12.0), color::SURFACE)?;
     }
@@ -139,6 +130,41 @@ fn host_banner(pen: &mut Pen<'_>, preview: Area, os: bool, hits: &mut Hits) -> A
         )?;
     }
     Ok(())
+}
+
+/// Where the effects, the picker and the sliders go. Wide: three
+/// columns. Narrow: effects on top, picker and sliders below. Cards stop
+/// at what they hold instead of stretching down a tall window.
+fn panels(pen: &Pen<'_>, rest: Area, gap: f32) -> (Area, Area, Area) {
+    let picker_w = pen.s(360.0);
+    let side_min = pen.s(260.0);
+    let effects_min = pen.s(380.0);
+    if rest.w >= effects_min + picker_w + side_min + 2.0 * gap {
+        let h = rest.h.min(pen.s(380.0));
+        let effects_w = (rest.w * 0.42).max(effects_min);
+        let effects = Area::new(rest.x, rest.y, effects_w, h);
+        let picker = Area::new(effects.right() + gap, rest.y, picker_w, h);
+        let side = Area::new(
+            picker.right() + gap,
+            rest.y,
+            rest.right() - picker.right() - gap,
+            h,
+        );
+        return (effects, picker, side);
+    }
+    let effects_h = pen.s(300.0).min(rest.h * 0.5);
+    let effects = Area::new(rest.x, rest.y, rest.w, effects_h);
+    let below = rest.y + effects_h + gap;
+    let h = (rest.bottom() - below).min(pen.s(380.0));
+    let picker_w = picker_w.min((rest.w - gap) * 0.55);
+    let picker = Area::new(rest.x, below, picker_w, h);
+    let side = Area::new(
+        picker.right() + gap,
+        below,
+        rest.right() - picker.right() - gap,
+        h,
+    );
+    (effects, picker, side)
 }
 
 /// Each key's place for the effects, as the firmware computes it: key

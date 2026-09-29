@@ -16,7 +16,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         x0,
         keyboard.bottom() + pen.s(16.0),
         width,
-        body.bottom() - keyboard.bottom() - pen.s(24.0),
+        (body.bottom() - keyboard.bottom() - pen.s(24.0)).min(pen.s(470.0)),
     );
     other_devices(pen, others, shared, hits)?;
     Ok(pen
