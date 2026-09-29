@@ -127,7 +127,6 @@ fn other_devices(
         hits,
     )?;
     y += pen.s(32.0);
-
     let sync = [
         (
             lang.tr("Leave them to Windows").to_string(),
@@ -153,56 +152,179 @@ fn other_devices(
         )?;
         return Ok(());
     }
-    let row_h = pen.s(44.0);
-    for (i, lamp) in shared.lamps.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let row = Area::new(
-            x - pen.s(8.0),
-            y + row_h * i as f32,
-            w + pen.s(16.0),
-            row_h - pen.s(4.0),
+    let rest = Area::new(x, y, w, card.bottom() - y - pen.s(20.0));
+    let plane_w = (rest.w * 0.58).max(pen.s(200.0));
+    let plane = Area::new(rest.x, rest.y, plane_w, rest.h);
+    desk(pen, plane, shared, hits)?;
+    let side = Area::new(
+        plane.right() + pen.s(16.0),
+        rest.y,
+        rest.right() - plane.right() - pen.s(16.0),
+        rest.h,
+    );
+    picked(pen, side, shared, hits)?;
+    Ok(())
+}
+
+/// The desk: every device where it sits, its lamps in their live colours.
+/// Drag a device to move it.
+fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<()> {
+    let lang = pen.lang;
+    pen.round(area, pen.s(10.0), color::BACKGROUND)?;
+    let (mut left, mut top, mut right, mut bottom) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for d in &shared.lamps {
+        left = left.min(d.place.x);
+        top = top.min(d.place.y);
+        right = right.max(d.place.x + d.size.0);
+        bottom = bottom.max(d.place.y + d.size.1);
+    }
+    let pad = pen.s(24.0);
+    let scale = ((area.w - 2.0 * pad) / (right - left).max(0.05))
+        .min((area.h - 2.0 * pad - pen.s(14.0)) / (bottom - top).max(0.05))
+        .max(1.0);
+    let ox = area.x + (area.w - (right - left) * scale) / 2.0;
+    let oy = area.y + (area.h - (bottom - top) * scale) / 2.0;
+    let settings = shared.lighting().filter(|_| shared.lamp_sync);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let now = lykil::time::Tick((pen.anim.time() * 1000.0) as u32);
+    let colours = settings.map(|s| crate::lamps::colours(&shared.lamps, s, now));
+    for (i, d) in shared.lamps.iter().enumerate() {
+        let rect = Area::new(
+            ox + (d.place.x - left) * scale,
+            oy + (d.place.y - top) * scale,
+            d.size.0 * scale,
+            d.size.1 * scale,
         );
-        if row.bottom() > card.bottom() - pen.s(8.0) {
+        let picked = shared.ui.desk_selected.as_deref() == Some(d.id.as_str());
+        let hover = pen.hover(rect, Hit::DeskDevice(i));
+        let face = if d.place.follow {
+            color::RAISED
+        } else {
+            color::mix(color::BACKGROUND, color::RAISED, 0.5)
+        };
+        pen.round(rect, pen.s(6.0), color::mix(face, color::HOVER, hover))?;
+        if picked {
+            pen.outline(rect, pen.s(6.0), pen.s(2.0), color::ACCENT)?;
+        }
+        let dot = (pen.s(2.5) + scale * 0.004).min(pen.s(5.0));
+        for (k, (lx, ly)) in d.lamps.iter().enumerate() {
+            let c = colours
+                .as_ref()
+                .filter(|_| d.place.follow)
+                .and_then(|c| c.get(i)?.get(k).copied())
+                .map_or(color::FAINT, crate::lights::rgb);
+            pen.circle(rect.x + lx * scale, rect.y + ly * scale, dot, c)?;
+        }
+        let label = Area::new(
+            rect.x,
+            rect.bottom() + pen.s(2.0),
+            rect.w.max(pen.s(60.0)),
+            pen.s(12.0),
+        );
+        pen.fitted_left(&d.name, label, 9.0, 7.0, color::DIM)?;
+        hits.push((rect, Hit::DeskDevice(i)));
+    }
+    let hint = Area::new(
+        area.x + pen.s(10.0),
+        area.y + pen.s(6.0),
+        area.w,
+        pen.s(12.0),
+    );
+    pen.fitted_left(
+        lang.tr("Drag the devices to where they sit"),
+        hint,
+        9.0,
+        7.0,
+        color::FAINT,
+    )
+}
+
+/// The picked device's brightness, then every device with its follow
+/// switch.
+fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<()> {
+    let lang = pen.lang;
+    let mut y = area.y;
+    if let Some(d) = shared
+        .lamps
+        .iter()
+        .find(|d| shared.ui.desk_selected.as_deref() == Some(d.id.as_str()))
+    {
+        pen.fitted_left(
+            &d.name,
+            Area::new(area.x, y, area.w, pen.s(18.0)),
+            13.0,
+            9.0,
+            color::TEXT,
+        )?;
+        y += pen.s(24.0);
+        view::label(pen, lang.tr("BRIGHTNESS"), area.x, y)?;
+        let pct = format!("{}%", u32::from(d.place.level) * 100 / 255);
+        let font = pen.font(11.0);
+        let pw = pen.width(&pct, &font);
+        pen.text(&pct, area.right() - pw, y, &font, color::DIM)?;
+        let track = Area::new(area.x, y + pen.s(18.0), area.w, pen.s(8.0));
+        pen.round(track, track.h / 2.0, color::RAISED)?;
+        let fill = Area::new(
+            track.x,
+            track.y,
+            track.w * f32::from(d.place.level) / 255.0,
+            track.h,
+        );
+        pen.round(fill, track.h / 2.0, color::ACCENT)?;
+        let knob = fill.right();
+        pen.circle(knob, track.y + track.h / 2.0, pen.s(7.0), color::TEXT)?;
+        hits.push((
+            Area::new(
+                track.x,
+                track.y - pen.s(10.0),
+                track.w,
+                track.h + pen.s(20.0),
+            ),
+            Hit::DeviceLevel,
+        ));
+        y += pen.s(44.0);
+    } else {
+        pen.fitted_left(
+            lang.tr("Click a device on the desk to set it up"),
+            Area::new(area.x, y, area.w, pen.s(18.0)),
+            11.0,
+            8.0,
+            color::FAINT,
+        )?;
+        y += pen.s(28.0);
+    }
+    let row_h = pen.s(42.0);
+    let font = pen.bold(11.0);
+    for (i, d) in shared.lamps.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let row = Area::new(area.x, y + row_h * i as f32, area.w, row_h - pen.s(4.0));
+        if row.bottom() > area.bottom() {
             break;
         }
-        pen.round(row, pen.s(8.0), color::RAISED)?;
-        let dot = if lamp.available {
+        let dot = if d.available {
             color::GOOD
         } else {
             color::FAINT
         };
-        pen.circle(row.x + pen.s(16.0), row.y + row.h / 2.0, pen.s(4.0), dot)?;
-        let name = Area::new(
-            row.x + pen.s(30.0),
-            row.y + pen.s(4.0),
-            row.w * 0.5,
-            pen.s(18.0),
-        );
-        pen.fitted_left(&lamp.name, name, 13.0, 9.0, color::TEXT)?;
-        let about = if lamp.open {
-            lang.fill(
-                "{}, {} lamps",
-                &[lang.tr(lamp.kind), &lamp.lamps.to_string()],
-            )
+        pen.circle(row.x + pen.s(5.0), row.y + row.h / 2.0, pen.s(3.5), dot)?;
+        let (text, on) = if d.place.follow {
+            (lang.tr("Following"), true)
         } else {
-            lang.tr("Windows has not handed it over yet").to_string()
-        };
-        let sub = Area::new(name.x, row.y + pen.s(22.0), row.w * 0.5, pen.s(14.0));
-        pen.fitted_left(&about, sub, 10.0, 8.0, color::DIM)?;
-        let (text, on) = if lamp.follow {
-            (lang.tr("Follows the keyboard"), true)
-        } else {
-            (lang.tr("Follow the keyboard"), false)
+            (lang.tr("Follow"), false)
         };
         let fw = pen.width(text, &font) + pen.s(24.0);
+        let text_w = row.w - fw - pen.s(26.0);
+        let name = Area::new(row.x + pen.s(16.0), row.y + pen.s(2.0), text_w, pen.s(16.0));
+        pen.fitted_left(&d.name, name, 12.0, 9.0, color::TEXT)?;
+        let state = if d.open {
+            lang.tr(d.kind)
+        } else {
+            lang.tr("Windows has not handed it over yet")
+        };
+        let sub = Area::new(name.x, row.y + pen.s(19.0), text_w, pen.s(13.0));
+        pen.fitted_left(state, sub, 10.0, 8.0, color::DIM)?;
         let pill = [(text.to_string(), Hit::LampFollow(i), on)];
-        view::pills(
-            pen,
-            row.right() - fw - pen.s(8.0),
-            row.y + pen.s(5.0),
-            &pill,
-            hits,
-        )?;
+        view::pills(pen, row.right() - fw, row.y + pen.s(2.0), &pill, hits)?;
     }
     Ok(())
 }

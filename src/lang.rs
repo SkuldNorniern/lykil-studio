@@ -100,6 +100,16 @@ const KO: &[(&str, &str)] = &[
     ),
     ("Follows the keyboard", "키보드를 따름"),
     ("Follow the keyboard", "키보드 따르기"),
+    ("Following", "따르는 중"),
+    ("Follow", "따르기"),
+    (
+        "Drag the devices to where they sit",
+        "장치를 실제 놓인 자리로 끌어 옮기세요",
+    ),
+    (
+        "Click a device on the desk to set it up",
+        "책상 위 장치를 눌러 설정하세요",
+    ),
     ("keyboard", "키보드"),
     ("mouse", "마우스"),
     ("game controller", "게임 컨트롤러"),

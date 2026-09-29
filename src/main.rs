@@ -3,6 +3,7 @@
 mod anim;
 mod app;
 mod colour;
+mod desk;
 mod device;
 mod draw;
 mod edit;

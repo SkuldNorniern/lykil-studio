@@ -6,33 +6,42 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use lykil::lighting::{Effect, Moment, Point, Settings, shade};
+use lykil::lighting::{Effect, Moment, Point, Rgb, Settings, shade};
 use lykil::time::Tick;
 
 use crate::app::Shared;
+use crate::desk::Place;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Lamp {
     pub id: String,
     pub name: String,
     pub kind: &'static str,
-    pub lamps: u32,
     /// May Studio set its colours right now (Studio in front, user
     /// settings)?
     pub available: bool,
-    pub follow: bool,
     /// Windows has handed the device over; until then it cannot be lit.
     pub open: bool,
+    pub place: Place,
+    /// Width and depth in metres.
+    pub size: (f32, f32),
+    /// Each lamp's place on the device, in metres from its top left.
+    pub lamps: Vec<(f32, f32)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LampCommand {
     Sync(bool),
     Follow(String, bool),
+    /// Moves a device on the desk, in metres.
+    Place(String, f32, f32),
+    Level(String, u8),
 }
 
 const RESCAN: Duration = Duration::from_secs(3);
 const FRAME: Duration = Duration::from_millis(33);
+/// Size of a device Windows has not described yet.
+const UNKNOWN_SIZE: (f32, f32) = (0.12, 0.06);
 
 pub fn spawn(shared: Arc<Mutex<Shared>>) -> Sender<LampCommand> {
     let (tx, rx) = channel();
@@ -42,7 +51,7 @@ pub fn spawn(shared: Arc<Mutex<Shared>>) -> Sender<LampCommand> {
 
 #[cfg(windows)]
 fn run(shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
-    let mut devices = os::Devices::default();
+    let mut devices = os::Devices::new(crate::desk::Desk::load());
     let mut sync = false;
     let mut next_scan = Instant::now();
     let start = Instant::now();
@@ -50,7 +59,7 @@ fn run(shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
         while let Ok(command) = rx.try_recv() {
             match command {
                 LampCommand::Sync(on) => sync = on,
-                LampCommand::Follow(id, on) => devices.follow(&id, on),
+                command => devices.command(&command),
             }
         }
         if Instant::now() >= next_scan {
@@ -78,9 +87,9 @@ fn run(_shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
     while rx.recv().is_ok() {}
 }
 
-/// A lamp's colour under `settings` at `now`. Per-key and off leave
-/// other devices dark; the press effects show their resting glow.
-fn colour(settings: Settings, at: Point, now: Tick) -> lykil::lighting::Rgb {
+/// A lamp's colour under `settings` at `now`. Per-key shows the plain
+/// colour; the press effects show their resting glow.
+pub fn colour(settings: Settings, at: Point, now: Tick) -> Rgb {
     let s = match settings.effect {
         Effect::PerKey => Settings {
             effect: Effect::Solid,
@@ -95,6 +104,25 @@ fn colour(settings: Settings, at: Point, now: Tick) -> lykil::lighting::Rgb {
     shade(s, at, &moment).to_rgb()
 }
 
+/// Every lamp's colour, per device in `lamps`, lit in desk space.
+pub fn colours(lamps: &[Lamp], settings: Settings, now: Tick) -> Vec<Vec<Rgb>> {
+    let frame = crate::desk::Frame::around(
+        lamps
+            .iter()
+            .filter(|l| l.place.follow)
+            .map(|l| (l.place, l.size)),
+    );
+    lamps
+        .iter()
+        .map(|l| {
+            l.lamps
+                .iter()
+                .map(|at| colour(settings, frame.point(l.place, *at), now).scale(l.place.level))
+                .collect()
+        })
+        .collect()
+}
+
 #[cfg(windows)]
 mod os {
     use lykil::lighting::{Point, Rgb};
@@ -103,13 +131,15 @@ mod os {
     use windows::UI::Color;
     use windows_future::{AsyncStatus, IAsyncOperation};
 
-    use super::Lamp;
+    use super::{Lamp, LampCommand, UNKNOWN_SIZE};
+    use crate::desk::{Desk, Frame, Place};
 
     struct Device {
-        pub id: String,
+        id: String,
         name: String,
         array: LampArray,
-        points: Vec<Point>,
+        size: (f32, f32),
+        lamps: Vec<(f32, f32)>,
         indices: Vec<i32>,
     }
 
@@ -122,15 +152,21 @@ mod os {
         op: IAsyncOperation<LampArray>,
     }
 
-    #[derive(Default)]
     pub struct Devices {
         open: Vec<Device>,
         opening: Vec<Opening>,
-        /// Followed ids, kept across opening and unplugging.
-        followed: Vec<String>,
+        desk: Desk,
     }
 
     impl Devices {
+        pub fn new(desk: Desk) -> Self {
+            Self {
+                open: Vec::new(),
+                opening: Vec::new(),
+                desk,
+            }
+        }
+
         pub fn rescan(&mut self) {
             let Ok(found) = LampArray::GetDeviceSelector()
                 .and_then(|s| DeviceInformation::FindAllAsyncAqsFilter(&s))
@@ -184,41 +220,89 @@ mod os {
             self.opening = still;
         }
 
-        pub fn follow(&mut self, id: &str, on: bool) {
-            self.followed.retain(|f| f != id);
-            if on {
-                self.followed.push(id.to_string());
+        pub fn command(&mut self, command: &LampCommand) {
+            let id = match command {
+                LampCommand::Follow(id, _)
+                | LampCommand::Place(id, ..)
+                | LampCommand::Level(id, _) => id.clone(),
+                LampCommand::Sync(_) => return,
+            };
+            let mut place = self.desk.get(&id).unwrap_or_default();
+            match command {
+                LampCommand::Follow(_, on) => place.follow = *on,
+                LampCommand::Place(_, x, y) => (place.x, place.y) = (*x, *y),
+                LampCommand::Level(_, level) => place.level = *level,
+                LampCommand::Sync(_) => {}
             }
+            self.desk.set(&id, place);
+            self.desk.save();
         }
 
-        pub fn views(&self) -> Vec<Lamp> {
-            let follows = |id: &str| self.followed.iter().any(|f| f == id);
-            let mut out: Vec<Lamp> = self
+        pub fn views(&mut self) -> Vec<Lamp> {
+            let before = self.desk.clone();
+            let mut out: Vec<Lamp> = Vec::new();
+            for (id, name, kind, available, open, size, lamps) in self
                 .open
                 .iter()
-                .map(|d| Lamp {
-                    follow: follows(&d.id),
-                    ..d.view()
+                .map(|d| {
+                    let kind = d.array.LampArrayKind().unwrap_or_default();
+                    (
+                        d.id.clone(),
+                        d.name.clone(),
+                        kind_name(kind),
+                        d.array.IsAvailable().unwrap_or(false),
+                        true,
+                        d.size,
+                        d.lamps.clone(),
+                    )
                 })
-                .collect();
-            out.extend(self.opening.iter().map(|o| Lamp {
-                id: o.id.clone(),
-                name: o.name.clone(),
-                kind: "device",
-                lamps: 0,
-                available: false,
-                follow: follows(&o.id),
-                open: false,
-            }));
+                .chain(self.opening.iter().map(|o| {
+                    (
+                        o.id.clone(),
+                        o.name.clone(),
+                        "device",
+                        false,
+                        false,
+                        UNKNOWN_SIZE,
+                        Vec::new(),
+                    )
+                }))
+                .collect::<Vec<_>>()
+            {
+                let placed: Vec<(Place, f32)> = out.iter().map(|l| (l.place, l.size.0)).collect();
+                let place = self.desk.place_new(&id, &placed);
+                out.push(Lamp {
+                    id,
+                    name,
+                    kind,
+                    available,
+                    open,
+                    place,
+                    size,
+                    lamps,
+                });
+            }
+            if self.desk != before {
+                self.desk.save();
+            }
             out.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
             out
         }
 
+        /// Lights every followed device, in desk space.
         pub fn show(&self, colour: impl Fn(Point) -> Rgb) {
-            for d in &self.open {
-                if self.followed.contains(&d.id) {
-                    d.show(&colour);
-                }
+            let followed = |d: &&Device| self.desk.get(&d.id).is_some_and(|p| p.follow);
+            let frame = Frame::around(
+                self.open
+                    .iter()
+                    .filter(followed)
+                    .filter_map(|d| Some((self.desk.get(&d.id)?, d.size))),
+            );
+            for d in self.open.iter().filter(followed) {
+                let Some(place) = self.desk.get(&d.id) else {
+                    continue;
+                };
+                d.show(|at| colour(frame.point(place, at)).scale(place.level));
             }
         }
     }
@@ -227,50 +311,34 @@ mod os {
         fn new(id: &str, name: String, array: LampArray) -> Option<Self> {
             let count = array.LampCount().ok()?;
             let bounds = array.BoundingBox().ok()?;
-            // Across the widest side, as the firmware scales its LEDs.
-            let span = bounds.X.max(bounds.Y).max(1e-6);
-            let points = (0..count)
+            let lamps = (0..count)
                 .map(|i| {
                     let p = array
                         .GetLampInfo(i)
                         .and_then(|l| l.Position())
                         .unwrap_or_default();
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    let scale = |v: f32| (v / span * 255.0).clamp(0.0, 255.0) as u8;
-                    Point::new(scale(p.X), scale(p.Y))
+                    (p.X, p.Y)
                 })
                 .collect();
             Some(Self {
                 id: id.to_string(),
                 name,
                 array,
-                points,
+                size: (bounds.X.max(0.01), bounds.Y.max(0.01)),
+                lamps,
                 indices: (0..count).collect(),
             })
         }
 
-        pub fn view(&self) -> Lamp {
-            let kind = self.array.LampArrayKind().unwrap_or_default();
-            Lamp {
-                id: self.id.clone(),
-                name: self.name.clone(),
-                kind: kind_name(kind),
-                lamps: u32::try_from(self.indices.len()).unwrap_or(0),
-                available: self.array.IsAvailable().unwrap_or(false),
-                follow: false,
-                open: true,
-            }
-        }
-
-        fn show(&self, colour: &impl Fn(Point) -> Rgb) {
+        fn show(&self, colour: impl Fn((f32, f32)) -> Rgb) {
             if !self.array.IsAvailable().unwrap_or(false) {
                 return;
             }
             let colors: Vec<Color> = self
-                .points
+                .lamps
                 .iter()
-                .map(|p| {
-                    let c = colour(*p);
+                .map(|at| {
+                    let c = colour(*at);
                     Color {
                         A: 255,
                         R: c.r,

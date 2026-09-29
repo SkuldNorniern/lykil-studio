@@ -136,6 +136,10 @@ pub enum Hit {
     ViaFolder,
     LampSync(bool),
     LampFollow(usize),
+    /// A device on the desk plane, by its place in the list.
+    DeskDevice(usize),
+    /// The brightness of the device picked on the desk.
+    DeviceLevel,
     Second(bool),
     LayerKeys(bool),
 }
@@ -269,6 +273,16 @@ const LEAVE: Duration = Duration::from_millis(60);
 
 const RECENT: usize = 8;
 
+/// A desk device being moved: where it and the mouse were when the drag
+/// began, and pixels per metre.
+#[derive(Clone, Debug)]
+struct DeskGrab {
+    id: String,
+    from: (f32, f32),
+    mouse: (f32, f32),
+    scale: f32,
+}
+
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 pub struct Ui {
@@ -281,6 +295,11 @@ pub struct Ui {
     pub mouse: (f32, f32),
     pub hits: Vec<(Area, Hit)>,
     drag: Option<(Hit, Area)>,
+    /// A desk device being moved: its id, where it and the mouse were
+    /// when the drag began, and pixels per metre.
+    desk_grab: Option<DeskGrab>,
+    /// The device picked on the desk.
+    pub desk_selected: Option<String>,
     painting: bool,
     /// Lighting settings sent but not confirmed yet, so controls follow the
     /// mouse at once.
@@ -327,6 +346,7 @@ impl Shared {
 
     pub fn animating(&self) -> bool {
         (self.ui.tab == Tab::Lighting && self.lighting().is_some())
+            || (self.ui.tab == Tab::Windows && self.lamp_sync)
             || self.ui.editing.is_some()
             || self.ui.left.is_some()
     }
@@ -592,6 +612,7 @@ impl Shared {
             (MouseButton::Right, true) => self.right_click(),
             (MouseButton::Left, false) => {
                 self.ui.drag = None;
+                self.ui.desk_grab = None;
                 self.ui.painting = false;
             }
             _ => return false,
@@ -713,16 +734,8 @@ impl Shared {
         };
         match hit {
             Hit::Tab(t) => self.switch_tab(t),
-            Hit::LampSync(on) => {
-                self.lamp_sync = on;
-                self.lamp(crate::lamps::LampCommand::Sync(on));
-            }
-            Hit::LampFollow(i) => {
-                if let Some(l) = self.lamps.get_mut(i) {
-                    l.follow = !l.follow;
-                    let command = crate::lamps::LampCommand::Follow(l.id.clone(), l.follow);
-                    self.lamp(command);
-                }
+            Hit::LampSync(_) | Hit::DeskDevice(_) | Hit::DeviceLevel | Hit::LampFollow(_) => {
+                self.click_desk(hit, tx);
             }
             Hit::ViaFolder => {
                 let _ = std::process::Command::new("explorer")
@@ -1020,8 +1033,86 @@ impl Shared {
                 c.h = byte(across).min(254);
                 self.pick(c, tx);
             }
+            Hit::DeskDevice(i) => self.move_device(i),
+            Hit::DeviceLevel => {
+                let id = self.ui.desk_selected.clone();
+                if let Some(l) = self.lamps.iter_mut().find(|l| Some(&l.id) == id.as_ref()) {
+                    l.place.level = byte(across);
+                    let command = crate::lamps::LampCommand::Level(l.id.clone(), l.place.level);
+                    self.lamp(command);
+                }
+            }
             _ => {}
         }
+    }
+
+    /// A click on the Windows page's desk and device list.
+    fn click_desk(&mut self, hit: Hit, tx: &Sender<Command>) {
+        match hit {
+            Hit::LampSync(on) => {
+                self.lamp_sync = on;
+                self.lamp(crate::lamps::LampCommand::Sync(on));
+            }
+            Hit::DeskDevice(i) => {
+                if let Some(l) = self.lamps.get(i) {
+                    let area = self
+                        .ui
+                        .hits
+                        .iter()
+                        .rev()
+                        .find(|(_, h)| *h == hit)
+                        .map(|(a, _)| *a);
+                    if let Some(a) = area {
+                        let scale = a.w / l.size.0.max(1e-3);
+                        self.ui.desk_grab = Some(DeskGrab {
+                            id: l.id.clone(),
+                            from: (l.place.x, l.place.y),
+                            mouse: self.ui.mouse,
+                            scale,
+                        });
+                        self.ui.drag = Some((hit, a));
+                    }
+                    self.ui.desk_selected = Some(l.id.clone());
+                }
+            }
+            Hit::DeviceLevel => {
+                if let Some((area, _)) = self.ui.hits.iter().rev().find(|(_, h)| *h == hit) {
+                    let area = *area;
+                    self.ui.drag = Some((hit, area));
+                    self.drag_to(hit, area, tx);
+                }
+            }
+            Hit::LampFollow(i) => {
+                if let Some(l) = self.lamps.get_mut(i) {
+                    l.place.follow = !l.place.follow;
+                    let command = crate::lamps::LampCommand::Follow(l.id.clone(), l.place.follow);
+                    self.lamp(command);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Follows the mouse with the grabbed desk device.
+    fn move_device(&mut self, i: usize) {
+        let Some(DeskGrab {
+            id,
+            from: (x0, y0),
+            mouse: (mx, my),
+            scale,
+        }) = self.ui.desk_grab.clone()
+        else {
+            return;
+        };
+        let (x, y) = (
+            x0 + (self.ui.mouse.0 - mx) / scale,
+            y0 + (self.ui.mouse.1 - my) / scale,
+        );
+        if let Some(l) = self.lamps.get_mut(i).filter(|l| l.id == id) {
+            l.place.x = x;
+            l.place.y = y;
+        }
+        self.lamp(crate::lamps::LampCommand::Place(id, x, y));
     }
 
     fn change_lighting(&mut self, tx: &Sender<Command>, change: impl FnOnce(&mut Settings)) {
