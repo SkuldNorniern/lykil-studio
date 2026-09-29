@@ -34,10 +34,23 @@ impl Lang {
         }
     }
 
+    /// Off Windows, Aurea finds fonts by file name.
     pub const fn font_family(self) -> &'static str {
-        match self {
-            Self::En => "Segoe UI",
-            Self::Ko => "Malgun Gothic",
+        if cfg!(windows) {
+            match self {
+                Self::En => "Segoe UI",
+                Self::Ko => "Malgun Gothic",
+            }
+        } else if cfg!(target_os = "macos") {
+            match self {
+                Self::En => "Helvetica",
+                Self::Ko => "AppleSDGothicNeo",
+            }
+        } else {
+            match self {
+                Self::En => "DejaVuSans",
+                Self::Ko => "NotoSansCJK",
+            }
         }
     }
 
