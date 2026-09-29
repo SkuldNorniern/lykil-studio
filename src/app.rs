@@ -1154,10 +1154,10 @@ impl Shared {
     }
 
     pub fn settle(&mut self) {
-        if self.ui.drag.is_none()
-            && self.ui.draft.is_some()
-            && self.ui.draft == self.keyboard.lighting.map(|l| l.settings)
-        {
+        let confirmed = self.ui.draft == self.keyboard.lighting.map(|l| l.settings);
+        // A refused change shows what the keyboard kept, not the draft.
+        let refused = self.keyboard.error.is_some();
+        if self.ui.drag.is_none() && self.ui.draft.is_some() && (confirmed || refused) {
             self.ui.draft = None;
         }
     }
@@ -1198,6 +1198,28 @@ mod tests {
             Some(Tab::Windows)
         );
         assert_eq!(tab_shortcut(KeyCode::A, false, Tab::Keymap), None);
+    }
+
+    #[test]
+    fn refused_lighting_drops_the_draft() {
+        let mut s = Shared::default();
+        let keyboard = lykil_protocol::lcp::LightingInfo {
+            settings: Settings::DEFAULT,
+            leds: 1,
+            limit: 255,
+            host: false,
+            drivers_ok: true,
+        };
+        s.keyboard.lighting = Some(keyboard);
+        s.ui.draft = Some(Settings {
+            effect: Effect::Ripple,
+            ..Settings::DEFAULT
+        });
+        s.settle();
+        assert!(s.ui.draft.is_some(), "still waiting for the keyboard");
+        s.keyboard.error = Some("BadValue".into());
+        s.settle();
+        assert_eq!(s.lighting(), Some(Settings::DEFAULT));
     }
 
     #[test]
