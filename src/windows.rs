@@ -248,7 +248,54 @@ fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Aure
         9.0,
         7.0,
         color::FAINT,
+    )?;
+    if !shared.lamp_sync {
+        windows_banner(pen, area)?;
+    }
+    Ok(())
+}
+
+/// Across the bottom of the desk while Windows has the lights.
+fn windows_banner(pen: &mut Pen<'_>, area: Area) -> AureaResult<()> {
+    let lang = pen.lang;
+    let bar = Area::new(
+        area.x + pen.s(10.0),
+        area.bottom() - pen.s(44.0),
+        area.w - pen.s(20.0),
+        pen.s(34.0),
+    );
+    pen.round(bar, pen.s(8.0), color::RAISED)?;
+    pen.circle(
+        bar.x + pen.s(16.0),
+        bar.y + bar.h / 2.0,
+        pen.s(4.0),
+        color::DIM,
+    )?;
+    pen.fitted_left(
+        lang.tr("Windows controls these lights now. Studio only shows where they sit."),
+        Area::new(bar.x + pen.s(30.0), bar.y, bar.w - pen.s(40.0), bar.h),
+        12.0,
+        8.0,
+        color::DIM,
     )
+}
+
+/// Who lights device `d` right now, and how that reads.
+fn who_lights(d: &crate::lamps::Lamp, sync: bool) -> (&'static str, aurea::render::Color) {
+    if !sync {
+        ("Windows controls it", color::DIM)
+    } else if !d.place.follow {
+        ("Not following: Windows controls it", color::DIM)
+    } else if !d.open {
+        ("Waiting for Windows to hand it over", color::PRESSED)
+    } else if !d.available {
+        (
+            "Waiting: Studio has to be the window in front",
+            color::PRESSED,
+        )
+    } else {
+        ("Studio lights it", color::GOOD)
+    }
 }
 
 /// The picked device's brightness, then every device with its follow
@@ -295,6 +342,16 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
             Hit::DeviceLevel,
         ));
         y += pen.s(44.0);
+        if !shared.lamp_sync {
+            pen.fitted_left(
+                lang.tr("Used while Studio lights it."),
+                Area::new(area.x, y - pen.s(12.0), area.w, pen.s(14.0)),
+                10.0,
+                8.0,
+                color::FAINT,
+            )?;
+            y += pen.s(10.0);
+        }
     } else {
         pen.fitted_left(
             lang.tr("Click a device on the desk to set it up"),
@@ -313,11 +370,7 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
         if row.bottom() > area.bottom() {
             break;
         }
-        let dot = if d.available {
-            color::GOOD
-        } else {
-            color::FAINT
-        };
+        let dot = who_lights(d, shared.lamp_sync).1;
         pen.circle(row.x + pen.s(5.0), row.y + row.h / 2.0, pen.s(3.5), dot)?;
         let (text, on) = if d.place.follow {
             (lang.tr("Following"), true)
@@ -328,13 +381,9 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
         let text_w = row.w - fw - pen.s(26.0);
         let name = Area::new(row.x + pen.s(16.0), row.y + pen.s(2.0), text_w, pen.s(16.0));
         pen.fitted_left(&d.name, name, 12.0, 9.0, color::TEXT)?;
-        let state = if d.open {
-            lang.tr(d.kind)
-        } else {
-            lang.tr("Windows has not handed it over yet")
-        };
+        let (state, tone) = who_lights(d, shared.lamp_sync);
         let sub = Area::new(name.x, row.y + pen.s(19.0), text_w, pen.s(13.0));
-        pen.fitted_left(state, sub, 10.0, 8.0, color::DIM)?;
+        pen.fitted_left(lang.tr(state), sub, 10.0, 8.0, tone)?;
         let pill = [(text.to_string(), Hit::LampFollow(i), on)];
         view::pills(pen, row.right() - fw, row.y + pen.s(2.0), &pill, hits)?;
     }

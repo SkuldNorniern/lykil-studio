@@ -101,6 +101,25 @@ const KO: &[(&str, &str)] = &[
     ("Follows the keyboard", "키보드를 따름"),
     ("Follow the keyboard", "키보드 따르기"),
     ("Following", "따르는 중"),
+    (
+        "Windows controls these lights now. Studio only shows where they sit.",
+        "지금은 Windows가 이 조명을 제어합니다. Studio는 놓인 자리만 보여 줍니다.",
+    ),
+    ("Windows controls it", "Windows가 제어 중"),
+    (
+        "Not following: Windows controls it",
+        "따르지 않음: Windows가 제어 중",
+    ),
+    (
+        "Waiting for Windows to hand it over",
+        "Windows가 넘겨주기를 기다리는 중",
+    ),
+    (
+        "Waiting: Studio has to be the window in front",
+        "대기 중: Studio 창이 앞에 있어야 합니다",
+    ),
+    ("Studio lights it", "Studio가 켜는 중"),
+    ("Used while Studio lights it.", "Studio가 켤 때 쓰입니다."),
     ("Follow", "따르기"),
     (
         "Drag the devices to where they sit",
