@@ -156,6 +156,8 @@ mod os {
         open: Vec<Device>,
         opening: Vec<Opening>,
         desk: Desk,
+        /// Newly found devices since the last untangle.
+        fresh: bool,
     }
 
     impl Devices {
@@ -164,6 +166,7 @@ mod os {
                 open: Vec::new(),
                 opening: Vec::new(),
                 desk,
+                fresh: false,
             }
         }
 
@@ -188,6 +191,7 @@ mod os {
                     .Name()
                     .map_or_else(|_| "unnamed".into(), |n| n.to_string());
                 if let Ok(op) = LampArray::FromIdAsync(&id) {
+                    self.fresh = true;
                     self.opening.push(Opening {
                         id: id_text,
                         name,
@@ -195,8 +199,42 @@ mod os {
                     });
                 }
             }
+            let before = self.open.len() + self.opening.len();
             self.open.retain(|d| seen.contains(&d.id));
             self.opening.retain(|o| seen.contains(&o.id));
+            if self.open.len() + self.opening.len() != before || self.fresh {
+                self.fresh = false;
+                self.untangle();
+            }
+        }
+
+        /// Every device with its size, open or not.
+        fn sized(&self) -> Vec<(String, (f32, f32))> {
+            self.open
+                .iter()
+                .map(|d| (d.id.clone(), d.size))
+                .chain(self.opening.iter().map(|o| (o.id.clone(), UNKNOWN_SIZE)))
+                .collect()
+        }
+
+        /// Slides devices off each other, first come first kept.
+        fn untangle(&mut self) {
+            let mut placed: Vec<(Place, (f32, f32))> = Vec::new();
+            let mut moved = false;
+            for (id, size) in self.sized() {
+                let Some(place) = self.desk.get(&id) else {
+                    continue;
+                };
+                let spot = crate::desk::free_spot((place, size), &placed);
+                if spot != place {
+                    self.desk.set(&id, spot);
+                    moved = true;
+                }
+                placed.push((spot, size));
+            }
+            if moved {
+                self.desk.save();
+            }
         }
 
         pub fn settle(&mut self) {

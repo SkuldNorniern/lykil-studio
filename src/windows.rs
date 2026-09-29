@@ -221,13 +221,14 @@ fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Aure
                 .map_or(color::FAINT, crate::lights::rgb);
             pen.circle(rect.x + lx * scale, rect.y + ly * scale, dot, c)?;
         }
+        // Inside the device, so names never run into a neighbour.
         let label = Area::new(
-            rect.x,
-            rect.bottom() + pen.s(2.0),
-            rect.w.max(pen.s(60.0)),
-            pen.s(12.0),
+            rect.x + pen.s(6.0),
+            rect.y + pen.s(4.0),
+            (rect.w - pen.s(12.0)).max(pen.s(10.0)),
+            pen.s(12.0).min(rect.h),
         );
-        pen.fitted_left(&d.name, label, 9.0, 7.0, color::DIM)?;
+        pen.fitted_left(&d.name, label, 9.0, 6.0, color::DIM)?;
         hits.push((rect, Hit::DeskDevice(i)));
     }
     let hint = Area::new(
