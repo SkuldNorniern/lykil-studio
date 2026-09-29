@@ -24,10 +24,9 @@ pub struct Via {
     pub ids: (u16, u16),
 }
 
-/// Where VIA definitions go: `%APPDATA%\Lykil Studio\via`.
+/// Where VIA definitions go: `via` in Studio's data folder.
 pub fn folder() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map_or_else(|| PathBuf::from("."), PathBuf::from);
-    base.join("Lykil Studio").join("via")
+    crate::data_dir().join("via")
 }
 
 fn find(ids: (u16, u16)) -> Option<ViaDefinition> {

@@ -16,6 +16,7 @@ mod via;
 mod view;
 mod windows;
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -30,6 +31,32 @@ use crate::app::Shared;
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 800;
 const FRAME: Duration = Duration::from_millis(16);
+
+/// Where Studio keeps its files: the VIA folder and the desk.
+fn data_dir() -> PathBuf {
+    let var = |name| std::env::var_os(name).map(PathBuf::from);
+    let base = if cfg!(windows) {
+        var("APPDATA")
+    } else if cfg!(target_os = "macos") {
+        var("HOME").map(|h| h.join("Library/Application Support"))
+    } else {
+        var("XDG_CONFIG_HOME").or_else(|| var("HOME").map(|h| h.join(".config")))
+    };
+    base.unwrap_or_else(|| PathBuf::from("."))
+        .join("Lykil Studio")
+}
+
+/// Opens a folder or link in the system's file manager or browser.
+fn reveal(target: impl AsRef<std::ffi::OsStr>) {
+    let opener = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    let _ = std::process::Command::new(opener).arg(target).spawn();
+}
 
 fn main() -> ExitCode {
     match run() {

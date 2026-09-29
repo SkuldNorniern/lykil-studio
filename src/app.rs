@@ -739,17 +739,8 @@ impl Shared {
             Hit::LampSync(_) | Hit::DeskDevice(_) | Hit::DeviceLevel | Hit::LampFollow(_) => {
                 self.click_desk(hit, tx);
             }
-            Hit::ViaFolder => {
-                let _ = std::process::Command::new("explorer")
-                    .arg(crate::via::folder())
-                    .spawn();
-            }
-            Hit::LightingSettings => {
-                // Windows opens the settings page for the ms-settings: link.
-                let _ = std::process::Command::new("explorer")
-                    .arg("ms-settings:personalization-lighting")
-                    .spawn();
-            }
+            Hit::ViaFolder => crate::reveal(crate::via::folder()),
+            Hit::LightingSettings => crate::reveal("ms-settings:personalization-lighting"),
             Hit::Lang => self.ui.lang = self.ui.lang.other(),
             Hit::Layer(l) => self.ui.layer = l,
             Hit::Key(k) if self.ui.tab == Tab::Lighting => {

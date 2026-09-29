@@ -2,6 +2,7 @@
 //! Effects run in desk space, so a wave goes from one device to the next.
 
 use std::collections::BTreeMap;
+#[cfg(windows)]
 use std::path::PathBuf;
 
 use lykil::lighting::Point;
@@ -27,23 +28,27 @@ impl Default for Place {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))]
 pub struct Desk {
     places: BTreeMap<String, Place>,
 }
 
+#[cfg(windows)]
 fn file() -> PathBuf {
-    let base = std::env::var_os("APPDATA").map_or_else(|| PathBuf::from("."), PathBuf::from);
-    base.join("Lykil Studio").join("desk.txt")
+    crate::data_dir().join("desk.txt")
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 impl Desk {
     /// The saved desk; empty if there is none.
+    #[cfg(windows)]
     pub fn load() -> Self {
         std::fs::read_to_string(file())
             .map(|t| Self::parse(&t))
             .unwrap_or_default()
     }
 
+    #[cfg(windows)]
     pub fn save(&self) {
         let path = file();
         if let Some(dir) = path.parent() {
