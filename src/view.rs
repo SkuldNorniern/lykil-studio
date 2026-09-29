@@ -601,7 +601,8 @@ fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
                 lights::preview(*settings, p, info.index, *time, presses, points)
             })
     };
-    let face = color::mix(color::SURFACE, lights::rgb(lit), 0.9);
+    // A dark LED leaves the cap visible; light adds to it.
+    let face = color::glow(color::SURFACE, lights::rgb(lit));
     match brush {
         Some(b) if info.led.is_some() => color::mix(face, lights::rgb(*b), info.hovered * 0.6),
         _ => color::mix(face, color::TEXT, info.hovered * 0.15),
@@ -693,12 +694,7 @@ fn keymap_tab(
     let desc = kb.description.as_ref();
     let hovered = hovered_key(ui, desc, bindings, &layers);
     let Some((index, info)) = ui.selected.and_then(|k| desc?.keys.get(k).map(|d| (k, d))) else {
-        pen.centred(
-            lang.tr("Click a key to change what it does"),
-            panel,
-            &pen.font(14.0),
-            color::DIM,
-        )?;
+        keymap_tips(pen, panel)?;
         return Ok(hovered.unwrap_or_else(|| {
             lang.tr("Click a key, then pick a binding. Changes are saved on the keyboard.")
                 .into()
@@ -879,6 +875,41 @@ fn small_pills(
         x += w + pen.s(5.0);
     }
     Ok(y + pill_h)
+}
+
+/// What the keymap page does, while no key is picked.
+fn keymap_tips(pen: &mut Pen<'_>, panel: Area) -> AureaResult<()> {
+    let lang = pen.lang;
+    let title = Area::new(
+        panel.x,
+        panel.y + panel.h / 2.0 - pen.s(70.0),
+        panel.w,
+        pen.s(24.0),
+    );
+    pen.centred(
+        lang.tr("Click a key to change what it does"),
+        title,
+        &pen.bold(15.0),
+        color::TEXT,
+    )?;
+    let tips = [
+        "Arrow keys move to the next key, Delete clears it, Esc lets go.",
+        "Pick a layer above; see-through keys use the layer below.",
+        "When held makes a key do two things: tap for one, hold for another.",
+        "Send with adds modifiers, so one key can type Shift+1 or Ctrl+C.",
+    ];
+    let font = pen.font(12.0);
+    for (i, tip) in tips.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = Area::new(
+            panel.x,
+            title.bottom() + pen.s(14.0) + pen.s(22.0) * i as f32,
+            panel.w,
+            pen.s(18.0),
+        );
+        pen.centred(lang.tr(tip), a, &font, color::DIM)?;
+    }
+    Ok(())
 }
 
 fn layer_bar(
@@ -1161,9 +1192,9 @@ fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> Aure
 fn macro_note(pen: &mut Pen<'_>, editor: Area, id: usize) -> AureaResult<()> {
     let lang = pen.lang;
     let note = Area::new(
-        editor.x,
-        editor.bottom() + pen.s(16.0),
-        editor.w,
+        editor.x + pen.s(20.0),
+        editor.bottom() - pen.s(34.0),
+        editor.w - pen.s(40.0),
         pen.s(18.0),
     );
     pen.fitted_left(
@@ -1210,7 +1241,7 @@ fn macros_tab(
         list.right() + pen.s(20.0),
         list.y,
         body.right() - list.right() - pen.s(20.0),
-        pen.s(300.0),
+        pen.s(270.0),
     );
     pen.round(editor, pen.s(12.0), color::SURFACE)?;
     let x = editor.x + pen.s(20.0);
@@ -1312,7 +1343,7 @@ fn device_tab(
             cards.push(("LYKIL", fw.lykil.to_string()));
             cards.push(("CHIP ID", fw.id.clone()));
         }
-        None => cards.push(("FIRMWARE", lang.tr("too old to say").to_string())),
+        None => cards.push(("FIRMWARE", lang.tr("update it to see").to_string())),
     }
     if let Some(d) = &kb.diagnostics {
         cards.push(("UPTIME", uptime(d.uptime_ms)));

@@ -333,7 +333,23 @@ const KO: &[(&str, &str)] = &[
     ("STORAGE", "저장소"),
     ("FIRMWARE", "펌웨어"),
     ("CHIP ID", "칩 ID"),
-    ("too old to say", "알 수 없음 (오래된 펌웨어)"),
+    ("update it to see", "업데이트하면 보입니다"),
+    (
+        "Arrow keys move to the next key, Delete clears it, Esc lets go.",
+        "화살표로 다음 키로 가고, Delete로 비우고, Esc로 끝냅니다.",
+    ),
+    (
+        "Pick a layer above; see-through keys use the layer below.",
+        "위에서 레이어를 고르세요. 투명한 키는 아래 레이어를 씁니다.",
+    ),
+    (
+        "When held makes a key do two things: tap for one, hold for another.",
+        "누르고 있으면: 한 키로 두 가지. 톡 치면 하나, 누르고 있으면 다른 하나.",
+    ),
+    (
+        "Send with adds modifiers, so one key can type Shift+1 or Ctrl+C.",
+        "함께 보낼 키: 수정자 키를 더해 한 키로 Shift+1이나 Ctrl+C를 보냅니다.",
+    ),
     ("{} keys, {} layers", "키 {}개, 레이어 {}개"),
     ("{} ({} raw)", "{} (원시 {})"),
     ("ok", "정상"),

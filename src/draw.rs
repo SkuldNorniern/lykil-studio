@@ -25,6 +25,12 @@ pub mod color {
     pub const GOOD: Color = Color::rgb(110, 205, 140);
     pub const BAD: Color = Color::rgb(238, 112, 104);
 
+    /// `c` with `light` added on top, as a lit LED under a keycap.
+    pub fn glow(c: Color, light: Color) -> Color {
+        let add = |a: u8, b: u8| a.saturating_add(b);
+        Color::rgb(add(c.r, light.r), add(c.g, light.g), add(c.b, light.b))
+    }
+
     pub fn mix(c: Color, other: Color, t: f32) -> Color {
         let m = |a: u8, b: u8| {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
