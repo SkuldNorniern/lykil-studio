@@ -1,5 +1,4 @@
-//! What a binding looks like on a keycap, and the palette of bindings to
-//! pick from.
+//! Keycap text and the binding palette.
 
 use lykil::binding::Binding;
 use lykil::keycode::{ConsumerCode, KeyCode, Modifiers};
@@ -9,7 +8,6 @@ use lykil::oneshot::{OneShotTarget, Switch};
 use crate::edit::MODS;
 use lykil_config::names;
 
-/// Short keycap text for key names that are too long.
 const SHORT: &[(&str, &str)] = &[
     ("escape", "Esc"),
     ("enter", "Enter"),
@@ -91,7 +89,6 @@ fn short(name: &str) -> String {
     s
 }
 
-/// Keycap text of a lighting key.
 const fn light(k: lykil::lighting::LightingKey) -> &'static str {
     use lykil::lighting::LightingKey as L;
     match k {
@@ -177,13 +174,11 @@ pub fn keycap(b: Binding, layers: &[String]) -> (String, Option<String>) {
     }
 }
 
-/// The binding as `keymap.tav` writes it, for the details line.
 pub fn full(b: Binding, layers: &[String]) -> String {
     let refs: Vec<&str> = layers.iter().map(String::as_str).collect();
     lykil_config::emit::binding(&b, &refs).unwrap_or_else(|_| format!("{b:?}"))
 }
 
-/// One group of the binding palette.
 pub struct Group {
     pub name: &'static str,
     pub items: Vec<Binding>,

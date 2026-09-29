@@ -1,4 +1,4 @@
-//! Small drawn icons, so no image files are needed.
+//! Small drawn icons.
 
 use aurea::AureaResult;
 use aurea::render::Color;
@@ -6,7 +6,6 @@ use aurea::render::Color;
 use crate::app::Tab;
 use crate::draw::{Area, Pen};
 
-/// The icon of `tab`, filling the square `a`.
 #[allow(clippy::many_single_char_names)]
 pub fn tab(pen: &mut Pen<'_>, tab: Tab, a: Area, c: Color) -> AureaResult<()> {
     let u = a.w / 14.0;

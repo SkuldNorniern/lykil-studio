@@ -1,11 +1,4 @@
-//! The lighting page.
-//!
-//! The keyboard shows the effect live, drawn with the firmware's own
-//! [`shade`], so the preview is what the LEDs do. Under it: the effects
-//! as cards with a small preview each, the colour picker (a saturation
-//! and brightness square, a hue bar, hex and RGB fields, ready-made and
-//! recent colours) and the brightness, speed and who-controls switches.
-//! In per-key mode the picker is the brush.
+//! The lighting page. The preview runs the firmware's own `shade`.
 
 use std::cell::RefCell;
 
@@ -19,11 +12,9 @@ use crate::app::{Field, Hit, SWATCHES, Shared, Slider};
 use crate::draw::{Area, Pen, color};
 use crate::view::{self, Hits, Keys};
 
-/// Presses the previews show, in [`crate::anim::Anim::time`] seconds.
 pub struct Presses<'a> {
     pub at: &'a [Option<f32>],
     pub recent: Vec<(usize, f32)>,
-    /// Heatmap warmth per key, `0..=1`.
     pub heat: Vec<f32>,
 }
 
@@ -111,8 +102,6 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     })
 }
 
-/// Over the preview while a host has the LEDs: the effect shown is not
-/// what the keyboard does, and a way back to it.
 fn host_banner(pen: &mut Pen<'_>, preview: Area, os: bool, hits: &mut Hits) -> AureaResult<()> {
     let lang = pen.lang;
     let text = if os {
@@ -175,7 +164,6 @@ pub fn points(desc: &lykil_protocol::describe::Description) -> Vec<Option<Point>
         .collect()
 }
 
-/// What key `index` at `at` shows at `time`.
 pub fn preview(
     s: Settings,
     at: Point,
@@ -216,7 +204,6 @@ pub fn rgb(c: Rgb) -> Color {
     Color::rgb(c.r, c.g, c.b)
 }
 
-/// An effect's name as shown.
 pub const fn effect_name(e: Effect) -> &'static str {
     match e {
         Effect::Off => "Off",
@@ -233,7 +220,6 @@ pub const fn effect_name(e: Effect) -> &'static str {
     }
 }
 
-/// What an effect does, in a few words.
 const fn effect_about(e: Effect) -> &'static str {
     match e {
         Effect::Off => "LEDs off",
@@ -250,7 +236,6 @@ const fn effect_about(e: Effect) -> &'static str {
     }
 }
 
-/// Does the effect have resting keys, so the background level matters?
 const fn has_background(e: Effect) -> bool {
     matches!(
         e,
@@ -258,12 +243,10 @@ const fn has_background(e: Effect) -> bool {
     )
 }
 
-/// Does the effect use the size?
 const fn has_size(e: Effect) -> bool {
     matches!(e, Effect::Reactive | Effect::Ripple | Effect::Heatmap)
 }
 
-/// The effects as cards, four to a row, each with a live strip.
 fn effect_cards(
     pen: &mut Pen<'_>,
     area: Area,
@@ -326,8 +309,6 @@ fn effect_cards(
     Ok(())
 }
 
-/// A row of small keys running effect `e` with the current colour and
-/// speed; the press effects get a press now and then.
 fn effect_strip(
     pen: &mut Pen<'_>,
     strip: Area,
@@ -353,7 +334,6 @@ fn effect_strip(
             Some(Point::new(x, 0))
         })
         .collect();
-    // A press every life and a half, walking along the strip.
     #[allow(clippy::cast_precision_loss)]
     let every = press_life(s.speed).0 as f32 * 1.5 / 1000.0;
     let n = (time / every).floor();
@@ -361,7 +341,6 @@ fn effect_strip(
     let key = (n as usize * 3 + 2) % CELLS;
     let mut at = vec![None; CELLS];
     at[key] = Some(n * every);
-    // Heat around the last press, cooling off.
     let left = 1.0 - (time - n * every) / every;
     #[allow(clippy::cast_precision_loss)]
     let heat = (0..CELLS)
@@ -397,13 +376,10 @@ fn effect_strip(
 }
 
 thread_local! {
-    /// The last saturation and brightness square: hue and size, and its
-    /// pixels.
     static SQUARE: RefCell<Option<((u8, u32), Image)>> = const { RefCell::new(None) };
     static HUES: RefCell<Option<((u32, u32), Image)>> = const { RefCell::new(None) };
 }
 
-/// Saturation across, brightness up, for hue `h`; `size` pixels square.
 fn square_image(h: u8, size: u32) -> Image {
     let mut data = Vec::with_capacity((size * size * 4) as usize);
     let last = size.saturating_sub(1).max(1);
@@ -430,7 +406,6 @@ fn hue_image(w: u32, h: u32) -> Image {
     Image::new(w, h, data)
 }
 
-/// Draws `make`'s image at `area`, made again only when `key` changes.
 fn cached<K: PartialEq + Copy>(
     pen: &mut Pen<'_>,
     cell: &'static std::thread::LocalKey<RefCell<Option<(K, Image)>>>,
@@ -453,7 +428,6 @@ fn cached<K: PartialEq + Copy>(
         .draw_image_rect(&image, Rect::new(area.x, area.y, area.w, area.h))
 }
 
-/// The colour picker: square, hue bar, fields and swatches.
 fn picker_card(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<()> {
     let lang = pen.lang;
     let brushing = shared.brushing();
@@ -506,7 +480,6 @@ fn picker_card(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) 
     codes(pen, right, picked.to_rgb(), shared, hits)
 }
 
-/// Two chips, one per colour, to pick which one the picker edits.
 fn which_colour(
     pen: &mut Pen<'_>,
     area: Area,
@@ -569,8 +542,6 @@ fn which_colour(
     Ok(())
 }
 
-/// The saturation and brightness square at `square`, the hue bar under
-/// it.
 fn square_and_bar(pen: &mut Pen<'_>, square: Area, c: Hsv, hits: &mut Hits) -> AureaResult<()> {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let px = square.w.round() as u32;
@@ -607,8 +578,6 @@ fn square_and_bar(pen: &mut Pen<'_>, square: Area, c: Hsv, hits: &mut Hits) -> A
     Ok(())
 }
 
-/// The colour `now` in `area`: a swatch, its hex and RGB fields, and
-/// ready-made colours.
 fn codes(
     pen: &mut Pen<'_>,
     area: Area,
@@ -667,7 +636,6 @@ fn codes(
     Ok(())
 }
 
-/// A round colour to click.
 fn swatch_dot(pen: &mut Pen<'_>, a: Area, c: Rgb, now: Rgb, hits: &mut Hits) -> AureaResult<()> {
     let hit = Hit::Swatch(c);
     let t = pen.hover(a, hit);
@@ -683,15 +651,12 @@ fn swatch_dot(pen: &mut Pen<'_>, a: Area, c: Rgb, now: Rgb, hits: &mut Hits) -> 
     Ok(())
 }
 
-/// A marker: a light ring with the colour inside.
 fn ring(pen: &mut Pen<'_>, x: f32, y: f32, r: f32, c: Color) -> AureaResult<()> {
     pen.circle(x, y, r + pen.s(1.0), Color::rgb(0, 0, 0))?;
     pen.circle(x, y, r, color::TEXT)?;
     pen.circle(x, y, r - pen.s(2.5), c)
 }
 
-/// A picker text field; while typed in it shows the typed text and a
-/// blinking caret.
 fn field(
     pen: &mut Pen<'_>,
     a: Area,
@@ -724,7 +689,6 @@ fn field(
     Ok(())
 }
 
-/// Brightness, speed, who controls the LEDs, and the per-key tools.
 fn side_card(
     pen: &mut Pen<'_>,
     area: Area,
@@ -783,7 +747,6 @@ fn side_card(
             y += pen.s(30.0);
         }
     }
-    // Layer keys and who controls the lights, at the bottom.
     let bottom = area.bottom() - pen.s(104.0);
     if bottom > y {
         view::label(
@@ -873,7 +836,6 @@ fn segmented(
     Ok(())
 }
 
-/// A labelled slider; the knob glides to changes made elsewhere.
 fn slider(
     pen: &mut Pen<'_>,
     area: Area,

@@ -1,7 +1,4 @@
-//! Drawing helpers: the palette, rounded shapes and text placement.
-//!
-//! Everything is in canvas pixels; [`Pen::scale`] turns design sizes
-//! (at 100 % display scale) into pixels.
+//! Drawing helpers. Everything is in canvas pixels.
 
 use aurea::AureaResult;
 
@@ -28,7 +25,6 @@ pub mod color {
     pub const GOOD: Color = Color::rgb(110, 205, 140);
     pub const BAD: Color = Color::rgb(238, 112, 104);
 
-    /// `c` mixed towards `other` by `t` (0..=1).
     pub fn mix(c: Color, other: Color, t: f32) -> Color {
         let m = |a: u8, b: u8| {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -40,7 +36,6 @@ pub mod color {
     }
 }
 
-/// An axis-aligned box in canvas pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Area {
     pub x: f32,
@@ -66,7 +61,6 @@ impl Area {
         self.y + self.h
     }
 
-    /// Shrunk by `d` on every side.
     pub fn inset(&self, d: f32) -> Self {
         Self::new(
             self.x + d,
@@ -96,7 +90,6 @@ impl Pen<'_> {
         area.contains(self.mouse.0, self.mouse.1)
     }
 
-    /// How hovered `hit` at `area` is, easing between 0 and 1.
     pub fn hover(&mut self, area: Area, hit: Hit) -> f32 {
         let target = if self.hovered(area) { 1.0 } else { 0.0 };
         self.anim.to(Key::Hover(hit), target, rate::HOVER)
@@ -115,7 +108,6 @@ impl Pen<'_> {
         Font::new(self.lang.font_family(), self.s(size)).with_weight(FontWeight::Bold)
     }
 
-    /// `c` over what is there, `alpha` 0 (nothing) to 1.
     pub fn veil(&mut self, area: Area, c: Color, alpha: f32) -> AureaResult<()> {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let a = (alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -127,13 +119,11 @@ impl Pen<'_> {
         self.ctx.draw_rect(area.rect(), &fill(c))
     }
 
-    /// A filled box with rounded corners.
     pub fn round(&mut self, area: Area, radius: f32, c: Color) -> AureaResult<()> {
         let path = rounded(area, radius);
         self.ctx.draw_path(&path, &fill(c))
     }
 
-    /// A rounded outline.
     pub fn outline(&mut self, area: Area, radius: f32, width: f32, c: Color) -> AureaResult<()> {
         let path = rounded(area.inset(width / 2.0), radius);
         self.ctx.draw_path(
@@ -145,7 +135,6 @@ impl Pen<'_> {
         )
     }
 
-    /// A filled polygon through `points`.
     pub fn polygon(&mut self, points: &[(f32, f32)], c: Color) -> AureaResult<()> {
         let mut path = Path::new();
         for (i, &(x, y)) in points.iter().enumerate() {
@@ -170,13 +159,11 @@ impl Pen<'_> {
         self.ctx.measure_text(text, font).map_or(guess, |m| m.width)
     }
 
-    /// Text with its top left at `(x, y)`.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font: &Font, c: Color) -> AureaResult<()> {
         self.ctx
             .draw_text_with_font(text, Point::new(x, y + font.size * 0.8), font, &fill(c))
     }
 
-    /// Text centred in `area`.
     pub fn centred(&mut self, text: &str, area: Area, font: &Font, c: Color) -> AureaResult<()> {
         let w = self.width(text, font);
         let x = area.x + (area.w - w) / 2.0;
@@ -202,8 +189,6 @@ impl Pen<'_> {
         self.text(text, area.x, y, &font, c)
     }
 
-    /// Text centred in `area`, made smaller until it fits (down to
-    /// `min`).
     pub fn fitted(
         &mut self,
         text: &str,
@@ -224,10 +209,8 @@ pub fn fill(c: Color) -> Paint {
     Paint::new().color(c).style(PaintStyle::Fill)
 }
 
-/// A rounded rectangle; corners are cubic quarter circles.
 fn rounded(a: Area, radius: f32) -> Path {
     let r = radius.min(a.w / 2.0).min(a.h / 2.0).max(0.0);
-    // Control point distance for a quarter circle.
     let k = r * 0.552_284_8;
     let (x0, y0, x1, y1) = (a.x, a.y, a.right(), a.bottom());
     let p = Point::new;

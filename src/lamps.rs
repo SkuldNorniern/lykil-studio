@@ -1,11 +1,5 @@
-//! Other Dynamic Lighting devices (mice, cases, strips), through
-//! `Windows.Devices.Lights`.
-//!
-//! A thread finds every `LampArray` Windows knows, and while syncing is on
-//! drives the ones picked with the keyboard's own effect: each lamp's
-//! place on its device goes through the same [`shade`] the firmware
-//! runs. Windows lets an unpackaged app set colours only while it is in
-//! front, so this works while Studio is the active window.
+//! Other Dynamic Lighting devices through `Windows.Devices.Lights`.
+//! Windows lets an unpackaged app light them only while it is in front.
 
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -17,18 +11,15 @@ use lykil::time::Tick;
 
 use crate::app::Shared;
 
-/// A lit device as the UI shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Lamp {
     pub id: String,
     pub name: String,
-    /// Keyboard, mouse, chassis and so on.
     pub kind: &'static str,
     pub lamps: u32,
     /// May Studio set its colours right now (Studio in front, user
     /// settings)?
     pub available: bool,
-    /// Picked to follow the keyboard's effect.
     pub follow: bool,
     /// Windows has handed the device over; until then it cannot be lit.
     pub open: bool,
@@ -36,17 +27,13 @@ pub struct Lamp {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LampCommand {
-    /// Mirror the keyboard's effect on the picked devices, or stop.
     Sync(bool),
     Follow(String, bool),
 }
 
-/// How often the device list is looked at again.
 const RESCAN: Duration = Duration::from_secs(3);
-/// Frame time while syncing.
 const FRAME: Duration = Duration::from_millis(33);
 
-/// Starts the lamps thread; commands go to the returned sender.
 pub fn spawn(shared: Arc<Mutex<Shared>>) -> Sender<LampCommand> {
     let (tx, rx) = channel();
     thread::spawn(move || run(&shared, &rx));
@@ -88,7 +75,6 @@ fn run(shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
 
 #[cfg(not(windows))]
 fn run(_shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
-    // Dynamic Lighting is Windows only; drop what the UI asks for.
     while rx.recv().is_ok() {}
 }
 
@@ -119,12 +105,10 @@ mod os {
 
     use super::Lamp;
 
-    /// An open `LampArray`.
     struct Device {
         pub id: String,
         name: String,
         array: LampArray,
-        /// Each lamp's place on the device, scaled like keyboard LEDs.
         points: Vec<Point>,
         indices: Vec<i32>,
     }
@@ -138,7 +122,6 @@ mod os {
         op: IAsyncOperation<LampArray>,
     }
 
-    /// Every device found, open or still opening.
     #[derive(Default)]
     pub struct Devices {
         open: Vec<Device>,
@@ -148,7 +131,6 @@ mod os {
     }
 
     impl Devices {
-        /// Starts opening devices that came and drops ones that went.
         pub fn rescan(&mut self) {
             let Ok(found) = LampArray::GetDeviceSelector()
                 .and_then(|s| DeviceInformation::FindAllAsyncAqsFilter(&s))
@@ -181,7 +163,6 @@ mod os {
             self.opening.retain(|o| seen.contains(&o.id));
         }
 
-        /// Takes the devices Windows has handed over since.
         pub fn settle(&mut self) {
             let mut still = Vec::new();
             for o in self.opening.drain(..) {
@@ -233,7 +214,6 @@ mod os {
             out
         }
 
-        /// Lights every followed device.
         pub fn show(&self, colour: impl Fn(Point) -> Rgb) {
             for d in &self.open {
                 if self.followed.contains(&d.id) {
@@ -282,7 +262,6 @@ mod os {
             }
         }
 
-        /// Sets every lamp to `colour` of its place.
         fn show(&self, colour: &impl Fn(Point) -> Rgb) {
             if !self.array.IsAvailable().unwrap_or(false) {
                 return;

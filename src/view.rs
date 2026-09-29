@@ -1,8 +1,4 @@
 //! The whole window, drawn on one canvas.
-//!
-//! Header with the tabs and connection, the keyboard as it describes
-//! itself, and under it the panel of the current tab. Every control is
-//! recorded in the hit list as it is drawn.
 
 use aurea::AureaResult;
 use aurea::render::{Color, DrawingContext};
@@ -23,7 +19,6 @@ use crate::{icons, windows};
 const HEADER: f32 = 60.0;
 const FOOTER: f32 = 30.0;
 const MARGIN: f32 = 24.0;
-/// Largest key unit, in design pixels.
 const MAX_UNIT: f32 = 58.0;
 
 pub type Hits = Vec<(Area, Hit)>;
@@ -39,7 +34,6 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
     shared.settle();
     shared.settle_leave();
     shared.follow_presses();
-    // The pen holds the eased values while the pages read `shared`.
     let mut anim = std::mem::take(&mut shared.ui.anim);
     anim.frame();
     let mut pen = Pen {
@@ -137,8 +131,6 @@ fn header(pen: &mut Pen<'_>, w: f32, shared: &Shared, hits: &mut Hits) -> AureaR
     tab_bar(pen, (left_end, right_start, w), shared.ui.tab, hits)
 }
 
-/// "LYKIL STUDIO" and the keyboard's name at the left; returns where they
-/// end.
 fn title(pen: &mut Pen<'_>, kb: &Keyboard) -> AureaResult<f32> {
     let x = pen.s(MARGIN);
     let small = pen.bold(11.0);
@@ -154,8 +146,6 @@ fn title(pen: &mut Pen<'_>, kb: &Keyboard) -> AureaResult<f32> {
     Ok(x + wide)
 }
 
-/// The connection and the language switch at the right; returns where
-/// they start.
 fn status(pen: &mut Pen<'_>, w: f32, kb: &Keyboard, hits: &mut Hits) -> AureaResult<f32> {
     let lang = pen.lang;
     let (text, dot) = match &kb.connection {
@@ -182,7 +172,6 @@ fn status(pen: &mut Pen<'_>, w: f32, kb: &Keyboard, hits: &mut Hits) -> AureaRes
         color::DIM,
     )?;
 
-    // Language, left of the connection.
     let other = lang.other().label();
     // In its own language's font: the current one may not have its letters.
     let font = aurea::render::Font::new(lang.other().font_family(), pen.s(12.0));
@@ -204,8 +193,6 @@ fn status(pen: &mut Pen<'_>, w: f32, kb: &Keyboard, hits: &mut Hits) -> AureaRes
     Ok(switch.x)
 }
 
-/// The tabs between `left` and `right`, centred when there is room. When
-/// the window is narrow they shrink, and then show only their icons.
 fn tab_bar(
     pen: &mut Pen<'_>,
     (left, right, width): (f32, f32, f32),
@@ -256,8 +243,6 @@ fn tab_bar(
     Ok(())
 }
 
-/// A tab's icon and name, centred together; the name shrinks to fit,
-/// and a tab too narrow for it shows the icon alone.
 fn tab_label(pen: &mut Pen<'_>, a: Area, tab: Tab, fg: Color) -> AureaResult<()> {
     let text = pen.lang.tr(tab.name());
     let icon = pen.s(14.0);
@@ -284,7 +269,6 @@ fn tab_label(pen: &mut Pen<'_>, a: Area, tab: Tab, fg: Color) -> AureaResult<()>
     )
 }
 
-/// `status` from the page, unless there is a `notice` or a refused change.
 fn footer(
     pen: &mut Pen<'_>,
     (w, h): (f32, f32),
@@ -375,7 +359,6 @@ fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard, hits: &mut Hits) -> Aur
     pen.fitted(&line, sub, 13.0, 9.0, color::DIM)
 }
 
-/// A VIA keyboard without its definition: where to put the file.
 fn needs_definition(
     pen: &mut Pen<'_>,
     body: Area,
@@ -420,9 +403,7 @@ fn needs_definition(
     Ok(())
 }
 
-/// How keys are coloured and labelled.
 pub enum Keys<'a> {
-    /// Bindings of a layer; the selected key is outlined.
     Keymap {
         bindings: &'a [Binding],
         layers: &'a [String],
@@ -439,11 +420,9 @@ pub enum Keys<'a> {
         presses: &'a Presses<'a>,
         brush: Option<Rgb>,
     },
-    /// Key ids and what is pressed.
     Device,
 }
 
-/// Draws the keyboard in `area`; returns the area it used.
 pub fn keyboard(
     pen: &mut Pen<'_>,
     area: Area,
@@ -501,14 +480,11 @@ pub fn keyboard(
     Ok(used)
 }
 
-/// One key being drawn.
 struct Cap<'a> {
-    /// Description index.
     index: usize,
     id: &'a str,
     led: Option<u16>,
     down: bool,
-    /// How hovered, 0 to 1.
     hovered: f32,
 }
 
@@ -529,7 +505,6 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
         ),
         Keys::Device => (color::RAISED, false),
     };
-    // A pressed key glows up at once and fades out after release.
     let glow = pen.anim.towards(
         Key::Down(index),
         if down { 1.0 } else { 0.0 },
@@ -541,10 +516,8 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
     } else {
         face
     };
-    // Pressed caps sink a little.
     let sink = pen.s(1.5) * glow;
     let cap = Area::new(cap.x, cap.y + sink, cap.w, cap.h - sink);
-    // A darker skirt under the face gives the cap some depth.
     pen.round(cap, radius, color::mix(face, color::BACKGROUND, 0.45))?;
     let top = Area::new(
         cap.x + pen.s(2.0),
@@ -602,8 +575,6 @@ fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> Aure
     }
 }
 
-/// A key's face in the lighting preview; the per-key brush shows on the
-/// hovered key.
 fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
     let Keys::Lighting {
         settings,
@@ -637,7 +608,6 @@ fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
     }
 }
 
-/// Left, top, right and bottom of the keys with geometry, in units.
 fn bounds(desc: &Description) -> Option<(f64, f64, f64, f64)> {
     let mut b: Option<(f64, f64, f64, f64)> = None;
     for [x, y, w, h] in desc.keys.iter().filter_map(|k| k.geometry) {
@@ -647,7 +617,6 @@ fn bounds(desc: &Description) -> Option<(f64, f64, f64, f64)> {
     b
 }
 
-/// Pills in a row; returns the right edge.
 pub fn pills(
     pen: &mut Pen<'_>,
     x: f32,
@@ -737,7 +706,6 @@ fn keymap_tab(
     };
     let current = bindings.get(index).copied().unwrap_or_default();
 
-    // Left: the key.
     let left = Area::new(
         panel.x + pen.s(20.0),
         panel.y + pen.s(18.0),
@@ -749,7 +717,6 @@ fn keymap_tab(
         .map_or("?", String::as_str);
     key_card(pen, left, (&info.id, layer_name), current, &layers, hits)?;
 
-    // Right: the palette.
     let right = Area::new(
         left.right() + pen.s(24.0),
         panel.y + pen.s(18.0),
@@ -772,8 +739,6 @@ fn keymap_tab(
     }))
 }
 
-/// The selected key: its keycap, what it does, and its hold and modifier
-/// controls.
 fn key_card(
     pen: &mut Pen<'_>,
     left: Area,
@@ -813,7 +778,6 @@ fn key_card(
     Ok(())
 }
 
-/// `id: binding` of the key under the mouse, for the footer.
 fn hovered_key(
     ui: &crate::app::Ui,
     desc: Option<&Description>,
@@ -828,7 +792,6 @@ fn hovered_key(
     Some(format!("{id}: {}", legend::full(b, layers)))
 }
 
-/// "When held" and "send with" for the selected key, where they apply.
 fn key_parts(
     pen: &mut Pen<'_>,
     area: Area,
@@ -882,8 +845,6 @@ fn key_parts(
     Ok(())
 }
 
-/// Small pills that wrap inside `area`; returns the bottom of the last
-/// row.
 fn small_pills(
     pen: &mut Pen<'_>,
     area: Area,
@@ -920,7 +881,6 @@ fn small_pills(
     Ok(y + pill_h)
 }
 
-/// Layer pills on the left, reset on the right.
 fn layer_bar(
     pen: &mut Pen<'_>,
     body: Area,
@@ -964,7 +924,6 @@ fn layer_bar(
     Ok(())
 }
 
-/// A keycap-shaped button with a main and an optional small line.
 fn chip(
     pen: &mut Pen<'_>,
     (a, hit): (Area, Hit),
@@ -978,7 +937,6 @@ fn chip(
     } else {
         color::mix(color::RAISED, color::HOVER, t)
     };
-    // Hovered chips lift a little.
     let a = Area::new(a.x, a.y - pen.s(1.5) * t, a.w, a.h);
     pen.round(a, pen.s(7.0), color::mix(face, color::BACKGROUND, 0.45))?;
     let top = Area::new(
@@ -1011,8 +969,6 @@ fn chip(
     }
 }
 
-/// Group names down the left, the chosen group's bindings as keycaps on
-/// the right.
 fn palette(
     pen: &mut Pen<'_>,
     area: Area,
@@ -1119,7 +1075,6 @@ fn palette(
     Ok(())
 }
 
-/// Every macro slot with what it types.
 fn macro_list(
     pen: &mut Pen<'_>,
     list: Area,
@@ -1174,7 +1129,6 @@ fn macro_list(
     Ok(())
 }
 
-/// Multi-line text in `field`, with a caret at the end while editing.
 fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> AureaResult<()> {
     let lang = pen.lang;
     let font = pen.font(15.0);
@@ -1204,7 +1158,6 @@ fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> Aure
     Ok(())
 }
 
-/// How to use macro `id`, under the editor.
 fn macro_note(pen: &mut Pen<'_>, editor: Area, id: usize) -> AureaResult<()> {
     let lang = pen.lang;
     let note = Area::new(
@@ -1226,7 +1179,6 @@ fn macro_note(pen: &mut Pen<'_>, editor: Area, id: usize) -> AureaResult<()> {
     Ok(())
 }
 
-/// Macro slots on the left, the chosen macro's text on the right.
 fn macros_tab(
     pen: &mut Pen<'_>,
     body: Area,
@@ -1420,7 +1372,6 @@ fn device_tab(
         .into())
 }
 
-/// `1234567` as `1,234,567`.
 fn group(n: u32) -> String {
     let s = n.to_string();
     let mut out = String::new();

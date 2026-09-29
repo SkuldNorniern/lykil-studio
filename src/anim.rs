@@ -1,33 +1,20 @@
 //! Eased values for the UI.
-//!
-//! The view asks for a value with its target every frame
-//! ([`Anim::to`]); the value moves towards it with an exponential ease.
-//! While any value is still moving, [`Anim::busy`] asks for another
-//! frame. Values not asked for in a frame are forgotten.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::app::{Hit, Slider};
 
-/// What a value belongs to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
-    /// Hover highlight of a control.
     Hover(Hit),
-    /// Selection outline of a key, by description index.
     Selected(usize),
-    /// Glow of a pressed key, by description index.
     Down(usize),
-    /// Where the active tab's background sits, by tab index.
     TabBar,
-    /// The page coming in after a tab switch, 0 to 1.
     Page,
-    /// A slider's knob, `0..=255`.
     Knob(Slider),
 }
 
-/// Rates, per second: bigger is quicker.
 pub mod rate {
     pub const HOVER: f32 = 18.0;
     pub const SLIDE: f32 = 14.0;
@@ -37,7 +24,6 @@ pub mod rate {
     pub const RELEASE: f32 = 5.0;
 }
 
-/// Closer than this to the target counts as there.
 const SNAP: f32 = 0.002;
 /// Longest step one frame takes, so a frame after a quiet spell does not
 /// jump to the end.
@@ -46,7 +32,6 @@ const MAX_STEP: f32 = 1.0 / 30.0;
 #[derive(Debug)]
 struct Value {
     now: f32,
-    /// Asked for this frame.
     used: bool,
 }
 
@@ -72,7 +57,6 @@ impl Default for Anim {
 }
 
 impl Anim {
-    /// Starts a frame.
     pub fn frame(&mut self) {
         let now = Instant::now();
         self.dt = self
@@ -83,12 +67,10 @@ impl Anim {
         self.busy = false;
     }
 
-    /// Seconds since Studio started.
     pub fn time(&self) -> f32 {
         self.start.elapsed().as_secs_f32()
     }
 
-    /// Does a value still move?
     pub const fn busy(&self) -> bool {
         self.busy
     }
@@ -99,7 +81,6 @@ impl Anim {
         self.towards(key, target, rate, rate)
     }
 
-    /// Like [`Self::to`], with one rate going up and another going down.
     pub fn towards(&mut self, key: Key, target: f32, up: f32, down: f32) -> f32 {
         let dt = self.dt;
         let v = self.values.entry(key).or_insert(Value {
@@ -118,7 +99,6 @@ impl Anim {
         v.now
     }
 
-    /// Puts `key` at `value` now; the next [`Self::to`] eases from there.
     pub fn set(&mut self, key: Key, value: f32) {
         self.values.insert(
             key,
@@ -131,7 +111,6 @@ impl Anim {
     }
 }
 
-/// `0..=1` eased at both ends.
 pub fn smooth(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
@@ -165,7 +144,6 @@ mod tests {
         a.set(Key::Page, 0.0);
         a.frame();
         a.frame();
-        // Gone, so it starts at the target again.
         assert!((a.to(Key::Page, 1.0, rate::PAGE) - 1.0).abs() < f32::EPSILON);
     }
 }

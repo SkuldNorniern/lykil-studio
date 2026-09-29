@@ -1,11 +1,4 @@
 //! The keyboard, on a background thread.
-//!
-//! The thread finds a Lykil keyboard, reads what it is (description,
-//! keymap, lighting) and then keeps the matrix and counters fresh. A
-//! keyboard that speaks only VIA goes to [`crate::via`]. The UI
-//! asks for changes with [`Command`]s; the thread sends them between
-//! polls, and a run of lighting changes (a slider being dragged) goes out
-//! as one.
 
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -22,32 +15,23 @@ use lykil_protocol::lcp::{Diagnostics, Hello, LightingInfo, capability};
 
 use crate::app::Shared;
 
-/// How often the matrix is read while connected.
 const MATRIX_EVERY: Duration = Duration::from_millis(20);
 const DIAGNOSTICS_EVERY: Duration = Duration::from_secs(1);
 const RETRY_EVERY: Duration = Duration::from_secs(1);
 
-/// What is known about the connected keyboard.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Keyboard {
     pub connection: Connection,
     pub name: String,
     pub hello: Option<Hello>,
-    /// Set for a keyboard that speaks only VIA.
     pub via: Option<crate::via::Via>,
-    /// What firmware runs; `None` for firmware too old to say.
     pub firmware: Option<FirmwareInfo>,
-    /// What the keyboard says about itself: keys, layers, geometry.
     pub description: Option<Description>,
     pub diagnostics: Option<Diagnostics>,
-    /// Raw matrix of the last scan, per driven line.
     pub matrix: Vec<u32>,
-    /// `keymap[layer][key]` as the keyboard has it.
     pub keymap: Vec<Vec<Binding>>,
     pub lighting: Option<LightingInfo>,
-    /// Colours of the per-key effect, by LED.
     pub key_colors: Vec<Rgb>,
-    /// Every macro's steps, by id.
     pub macros: Vec<Vec<Step>>,
     /// The status of the last change the keyboard refused, for the status
     /// line.
@@ -62,7 +46,6 @@ impl Keyboard {
             .unwrap_or_default()
     }
 
-    /// Is matrix cell `(row, col)` closed?
     pub fn closed(&self, (row, col): (u8, u8)) -> bool {
         let columns = self.description.as_ref().is_some_and(|d| d.columns_driven);
         let (line, bit) = if columns { (col, row) } else { (row, col) };
@@ -79,7 +62,6 @@ pub enum Connection {
     Connected,
     /// A VIA keyboard whose definition is not in [`crate::via::folder`].
     NeedsDefinition,
-    /// Lost, with the reason.
     Lost(String),
 }
 
@@ -92,7 +74,6 @@ pub enum Command {
     },
     ResetKeymap,
     SetLighting(Settings),
-    /// Per-key colours from LED `start` on.
     SetKeyColors {
         start: u16,
         colors: Vec<Rgb>,
@@ -103,7 +84,6 @@ pub enum Command {
     },
 }
 
-/// Starts the device thread; commands go to the returned sender.
 pub fn spawn(shared: Arc<Mutex<Shared>>, canvas: CanvasId) -> Sender<Command> {
     let (tx, rx) = channel();
     thread::spawn(move || {
@@ -134,7 +114,6 @@ pub fn spawn(shared: Arc<Mutex<Shared>>, canvas: CanvasId) -> Sender<Command> {
                     }
                 }),
             }
-            // Commands for a keyboard that is gone are dropped.
             while rx.try_recv().is_ok() {}
             thread::sleep(RETRY_EVERY);
         }
@@ -142,7 +121,6 @@ pub fn spawn(shared: Arc<Mutex<Shared>>, canvas: CanvasId) -> Sender<Command> {
     tx
 }
 
-/// Reads the keyboard, then polls until it fails; returns why.
 fn poll(
     mut device: Device,
     rx: &Receiver<Command>,
@@ -229,8 +207,6 @@ fn poll(
     }
 }
 
-/// Sends what the UI asked for. Only a connection failure ends the poll;
-/// a refused change is shown and the rest go on.
 fn commands(
     device: &mut Device,
     rx: &Receiver<Command>,
@@ -245,7 +221,6 @@ fn commands(
             Err(TryRecvError::Disconnected) => return Err("studio closed".into()),
         };
         let result = match command {
-            // Only the newest lighting settings matter.
             Command::SetLighting(s) => {
                 lighting = Some(s);
                 Ok(())
@@ -291,7 +266,6 @@ fn commands(
     Ok(())
 }
 
-/// A status from the keyboard is shown; anything else ends the poll.
 fn refused(
     result: Result<(), DeviceError>,
     shared: &Arc<Mutex<Shared>>,
@@ -309,7 +283,6 @@ fn refused(
     }
 }
 
-/// Applies `change`; asks for a redraw only if something changed.
 pub fn update(shared: &Arc<Mutex<Shared>>, canvas: CanvasId, change: impl FnOnce(&mut Keyboard)) {
     let changed = {
         let mut s = shared.lock().unwrap_or_else(PoisonError::into_inner);

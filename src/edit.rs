@@ -1,20 +1,16 @@
-//! Changing one part of a binding: what a key does when held, and the
-//! modifiers sent with it.
+//! Changing one part of a binding: hold action and modifiers.
 
 use lykil::binding::Binding;
 use lykil::keycode::{KeyCode, Modifiers};
 use lykil::layer::LayerId;
 
-/// What a dual-role key does while held.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Hold {
-    /// Not dual-role: the key only taps.
     Nothing,
     Mods(Modifiers),
     Layer(LayerId),
 }
 
-/// The modifiers offered, one per side-less name.
 pub const MODS: [(&str, Modifiers); 4] = [
     ("Ctrl", Modifiers::LCTRL),
     ("Shift", Modifiers::LSHIFT),
@@ -22,7 +18,6 @@ pub const MODS: [(&str, Modifiers); 4] = [
     ("Win", Modifiers::LGUI),
 ];
 
-/// The key a binding taps, if it taps a plain key.
 pub const fn tap_key(b: Binding) -> Option<KeyCode> {
     match b {
         Binding::Key(k)
@@ -33,7 +28,6 @@ pub const fn tap_key(b: Binding) -> Option<KeyCode> {
     }
 }
 
-/// What the binding does when held; `None` if it cannot be dual-role.
 pub const fn hold(b: Binding) -> Option<Hold> {
     match b {
         Binding::Key(_) | Binding::ModifiedKey(..) => Some(Hold::Nothing),
@@ -56,7 +50,6 @@ pub const fn set_hold(b: Binding, hold: Hold) -> Option<Binding> {
     })
 }
 
-/// Modifiers sent with the key; `None` if the binding is not a plain key.
 pub const fn with(b: Binding) -> Option<Modifiers> {
     match b {
         Binding::Key(_) => Some(Modifiers::NONE),
@@ -65,7 +58,6 @@ pub const fn with(b: Binding) -> Option<Modifiers> {
     }
 }
 
-/// `b` with modifier `m` switched on or off.
 pub const fn toggle_with(b: Binding, m: Modifiers) -> Option<Binding> {
     let (Some(mods), Some(key)) = (with(b), tap_key(b)) else {
         return None;

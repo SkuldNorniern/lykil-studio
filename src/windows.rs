@@ -1,9 +1,4 @@
 //! The Windows lighting page.
-//!
-//! Whether the keyboard lets Windows Dynamic Lighting take its LEDs, and
-//! every other lit device Windows knows, which Studio can light with the
-//! keyboard's effect while it is in front ([`crate::lamps`]). Works
-//! without a keyboard too.
 
 use aurea::AureaResult;
 
@@ -30,7 +25,6 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         .into())
 }
 
-/// Whether the keyboard lets Windows take its LEDs.
 fn this_keyboard(
     pen: &mut Pen<'_>,
     card: Area,
@@ -106,7 +100,6 @@ fn this_keyboard(
     Ok(())
 }
 
-/// Every other `LampArray`, the sync switch, and a way to Settings.
 fn other_devices(
     pen: &mut Pen<'_>,
     card: Area,

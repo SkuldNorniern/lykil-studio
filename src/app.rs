@@ -1,9 +1,4 @@
-//! UI state and input.
-//!
-//! The view records what it drew where ([`Ui::hits`]); input is matched
-//! against the last frame's hits, so the view is the only place that knows
-//! the layout. Changes for the keyboard go to the device thread as
-//! [`Command`]s and show at once here.
+//! UI state and input, matched against the last frame's hits.
 
 use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
@@ -20,16 +15,12 @@ use crate::device::{Command, Keyboard};
 use crate::draw::Area;
 use crate::edit::{self, Hold};
 
-/// Everything the draw callback and the input handler share.
 #[derive(Debug, Default)]
 pub struct Shared {
     pub keyboard: Keyboard,
     pub ui: Ui,
-    /// Other Dynamic Lighting devices, from [`crate::lamps`].
     pub lamps: Vec<crate::lamps::Lamp>,
-    /// Studio lights the picked ones with the keyboard's effect.
     pub lamp_sync: bool,
-    /// To the lamps thread.
     pub lamp_tx: Option<Sender<crate::lamps::LampCommand>>,
 }
 
@@ -40,7 +31,6 @@ pub enum Tab {
     Macros,
     Lighting,
     Device,
-    /// Windows Dynamic Lighting: the keyboard and other lit devices.
     Windows,
 }
 
@@ -63,7 +53,6 @@ impl Tab {
         }
     }
 
-    /// Its place in the bar, from 0.
     pub fn index(self) -> usize {
         Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
     }
@@ -77,7 +66,6 @@ pub enum Slider {
     Size,
 }
 
-/// A text field of the colour picker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Field {
     Hex,
@@ -94,7 +82,6 @@ impl Field {
         Self::ORDER[(at + 1) % Self::ORDER.len()]
     }
 
-    /// The field's text for colour `c`.
     pub fn text(self, c: Rgb) -> String {
         match self {
             Self::Hex => colour::hex(c),
@@ -125,21 +112,14 @@ pub enum Hit {
     Tab(Tab),
     Layer(u8),
     Key(usize),
-    /// A palette group.
     Group(usize),
     Palette(Binding),
-    /// What the selected key does when held.
     Hold(Hold),
-    /// A modifier sent with the selected key, switched on or off.
     With(Modifiers),
     ResetKeymap,
-    /// Switches between English and Korean.
     Lang,
-    /// Every key the brush colour.
     PaintAll,
-    /// Every key dark.
     ClearAll,
-    /// A macro slot.
     Macro(usize),
     SaveMacro,
     ClearMacro,
@@ -150,18 +130,12 @@ pub enum Hit {
     Square,
     HueBar,
     Field(Field),
-    /// A ready-made or recent colour.
     Swatch(Rgb),
     Colours(Palette),
-    /// Opens Settings > Personalization > Dynamic Lighting.
     LightingSettings,
-    /// Opens the folder VIA definitions go in.
     ViaFolder,
-    /// Light other devices with the keyboard's effect, or not.
     LampSync(bool),
-    /// Switch following for the device at this place in the list.
     LampFollow(usize),
-    /// Which colour the picker edits: the second when true.
     Second(bool),
     LayerKeys(bool),
 }
@@ -173,7 +147,6 @@ pub struct Presses {
     /// When each key (by description index) last went down, in
     /// [`Anim::time`] seconds.
     pub at: Vec<Option<f32>>,
-    /// The latest presses, oldest first.
     pub recent: VecDeque<(usize, f32)>,
     /// Heatmap warmth per key, `0..=1`, and when it was last set.
     heat: Vec<(f32, f32)>,
@@ -280,7 +253,6 @@ fn tab_shortcut(key: KeyCode, shift: bool, now: Tab) -> Option<Tab> {
     Tab::ALL.get(at).copied()
 }
 
-/// Colours offered next to the picker.
 pub const SWATCHES: [Rgb; 8] = [
     Rgb::new(255, 0, 0),
     Rgb::new(255, 110, 0),
@@ -295,60 +267,43 @@ pub const SWATCHES: [Rgb; 8] = [
 /// How long a leave waits for an enter before it counts.
 const LEAVE: Duration = Duration::from_millis(60);
 
-/// Recent brush colours kept.
 const RECENT: usize = 8;
 
-/// Flags of the UI's own state (dragging, painting and so on).
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 pub struct Ui {
     pub tab: Tab,
     pub layer: u8,
-    /// Selected key, by description index (the key position).
     pub selected: Option<usize>,
-    /// The palette group shown.
     pub group: usize,
-    /// The macro shown on the macros page.
     pub macro_id: usize,
-    /// Text being typed for that macro, until saved.
     pub macro_text: Option<String>,
     pub mouse: (f32, f32),
-    /// What the last frame drew that reacts to the mouse, back to front.
     pub hits: Vec<(Area, Hit)>,
-    /// The control being dragged and its area.
     drag: Option<(Hit, Area)>,
-    /// The mouse is down on a key in per-key painting.
     painting: bool,
     /// Lighting settings sent but not confirmed yet, so controls follow the
     /// mouse at once.
     pub draft: Option<Settings>,
     /// Per-key brush; until picked, the lighting colour at full value.
     pub brush: Option<Hsv>,
-    /// The picker edits the second colour.
     pub second: bool,
-    /// Brush colours used lately, newest first.
     pub recent: Vec<Rgb>,
-    /// The picker field being typed in, and its text.
     pub editing: Option<(Field, String)>,
     /// The next typed letter replaces the field's text.
     fresh: bool,
-    /// Reset keymap was clicked once; the next click does it.
     pub confirm_reset: bool,
     pub presses: Presses,
     pub anim: Anim,
-    /// Canvas pixels per design pixel.
     pub scale: f32,
     /// Frames drawn, for [`crate::view`]'s repaint workaround.
     pub frame: u32,
     pub lang: crate::lang::Lang,
-    /// A message from Studio itself for the footer, until the next click.
     pub notice: Option<String>,
-    /// When the mouse seemed to leave the window.
     left: Option<Instant>,
 }
 
 impl Ui {
-    /// The hit under the mouse, front first.
     pub fn hovered(&self) -> Option<Hit> {
         let (x, y) = self.mouse;
         self.hits
@@ -358,21 +313,18 @@ impl Ui {
             .map(|(_, h)| *h)
     }
 
-    /// Is the mouse dragging `hit`?
     pub fn dragging(&self, hit: Hit) -> bool {
         self.drag.is_some_and(|(h, _)| h == hit)
     }
 }
 
 impl Shared {
-    /// Lighting settings as the UI shows them.
     pub fn lighting(&self) -> Option<Settings> {
         self.ui
             .draft
             .or_else(|| self.keyboard.lighting.map(|l| l.settings))
     }
 
-    /// Does the page change from frame to frame by itself?
     pub fn animating(&self) -> bool {
         (self.ui.tab == Tab::Lighting && self.lighting().is_some())
             || self.ui.editing.is_some()
@@ -388,19 +340,16 @@ impl Shared {
         }
     }
 
-    /// Is the picker editing the per-key brush (else the effect colour)?
     pub fn brushing(&self) -> bool {
         self.lighting().is_some_and(|s| s.effect == Effect::PerKey)
     }
 
-    /// Does the picker edit the second colour?
     pub fn editing_second(&self) -> bool {
         self.ui.second
             && !self.brushing()
             && self.lighting().is_some_and(|s| s.palette == Palette::Two)
     }
 
-    /// The colour the picker shows.
     pub fn picked(&self) -> Hsv {
         let s = self.lighting().unwrap_or_default();
         if self.brushing() {
@@ -426,7 +375,6 @@ impl Shared {
         }
     }
 
-    /// Keeps the key presses the previews show up to date.
     pub fn follow_presses(&mut self) {
         let Some(desc) = &self.keyboard.description else {
             return;
@@ -443,7 +391,6 @@ impl Shared {
         self.ui.presses.follow(&down, time);
     }
 
-    /// Handles one window event; returns whether to redraw.
     pub fn event(&mut self, event: &WindowEvent, tx: &Sender<Command>) -> bool {
         if self.ui.editing.is_some()
             && let Some(redraw) = self.field_event(event, tx)
@@ -549,7 +496,6 @@ impl Shared {
         }
     }
 
-    /// Arrows move the selected key, Delete clears it.
     fn keymap_key(&mut self, key: KeyCode, tx: &Sender<Command>) -> bool {
         match key {
             KeyCode::Left => self.step_selection(-1.0, 0.0),
@@ -633,7 +579,6 @@ impl Shared {
         }
     }
 
-    /// Shows `tab`; a new page slides in.
     fn switch_tab(&mut self, tab: Tab) {
         if self.ui.tab != tab {
             self.ui.anim.set(Key::Page, 0.0);
@@ -654,8 +599,6 @@ impl Shared {
         true
     }
 
-    /// Ctrl+C copies the picked colour as hex, Ctrl+V takes a colour
-    /// code.
     fn copy_paste(&mut self, key: KeyCode, tx: &Sender<Command>) -> bool {
         match key {
             KeyCode::C => {
@@ -672,7 +615,6 @@ impl Shared {
         }
     }
 
-    /// Typing into a picker field. `None` if the event is not for it.
     fn field_event(&mut self, event: &WindowEvent, tx: &Sender<Command>) -> Option<bool> {
         let (field, text) = self.ui.editing.as_mut()?;
         let field = *field;
@@ -727,14 +669,12 @@ impl Shared {
         }
     }
 
-    /// Starts typing into `field`.
     fn edit(&mut self, field: Field) {
         let text = field.text(self.picked().to_rgb());
         self.ui.editing = Some((field, text));
         self.ui.fresh = true;
     }
 
-    /// Takes what was typed, if it is a colour.
     fn commit(&mut self, tx: &Sender<Command>) {
         let Some((field, text)) = self.ui.editing.take() else {
             return;
@@ -860,7 +800,6 @@ impl Shared {
         }
     }
 
-    /// A click on one of the lighting controls.
     fn click_lighting(&mut self, hit: Hit, tx: &Sender<Command>) {
         match hit {
             Hit::PaintAll => {
@@ -891,7 +830,6 @@ impl Shared {
         }
     }
 
-    /// Right click on a key in per-key painting takes its colour.
     fn right_click(&mut self) {
         let Some(Hit::Key(k)) = self.ui.hovered() else {
             return;
@@ -910,7 +848,6 @@ impl Shared {
         }
     }
 
-    /// Moves the selection to the nearest key in direction `(dx, dy)`.
     fn step_selection(&mut self, dx: f64, dy: f64) -> bool {
         let (Some(desc), Some(current)) = (&self.keyboard.description, self.ui.selected) else {
             return false;
@@ -945,7 +882,6 @@ impl Shared {
         }
     }
 
-    /// The binding of the selected key on the shown layer.
     pub fn selected_binding(&self) -> Option<Binding> {
         self.keyboard
             .keymap
@@ -1020,7 +956,6 @@ impl Shared {
         });
     }
 
-    /// Puts the brush first in the recent colours.
     fn remember_brush(&mut self) {
         let c = self.picked().to_rgb();
         self.ui.recent.retain(|r| *r != c);
@@ -1028,7 +963,6 @@ impl Shared {
         self.ui.recent.truncate(RECENT);
     }
 
-    /// Every key `color`.
     fn fill(&mut self, color: Rgb, tx: &Sender<Command>) {
         let count = self.keyboard.key_colors.len();
         self.keyboard.key_colors = vec![color; count];
@@ -1038,7 +972,6 @@ impl Shared {
         });
     }
 
-    /// Paints key `k` (by description index) with the brush.
     fn paint(&mut self, k: usize, tx: &Sender<Command>) {
         let color = self.picked().to_rgb();
         let Some(led) = self
@@ -1062,7 +995,6 @@ impl Shared {
         });
     }
 
-    /// Follows the mouse on a dragged slider, square or hue bar.
     fn drag_to(&mut self, hit: Hit, area: Area, tx: &Sender<Command>) {
         let across = ((self.ui.mouse.0 - area.x) / area.w).clamp(0.0, 1.0);
         let down = ((self.ui.mouse.1 - area.y) / area.h).clamp(0.0, 1.0);
@@ -1104,7 +1036,6 @@ impl Shared {
         let _ = tx.send(Command::SetLighting(s));
     }
 
-    /// Drops the draft once the keyboard reports it back.
     pub fn settle(&mut self) {
         if self.ui.drag.is_none()
             && self.ui.draft.is_some()

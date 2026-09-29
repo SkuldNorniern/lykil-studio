@@ -1,10 +1,4 @@
-//! Keyboards that speak only VIA.
-//!
-//! Such a keyboard does not describe itself, so Studio needs its VIA
-//! definition (the JSON VIA's Design tab loads), looked up by USB ids in
-//! [`folder`]. The keymap is read and written in QMK keycodes, which
-//! `lykil-qmk` turns into Lykil bindings and back; a binding VIA cannot
-//! hold is refused. Lighting and macros stay Lykil only.
+//! Keyboards that speak only VIA, laid out from their VIA definition.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -22,14 +16,11 @@ use lykil_qmk::{AbiVersion, decode, encode, instantiate, project};
 use crate::app::Shared;
 use crate::device::{Command, Connection, Keyboard, update};
 
-/// How often a keyboard without a definition is looked for again.
 const RESCAN: Duration = Duration::from_secs(1);
 
-/// A VIA keyboard as Studio shows it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Via {
     pub protocol: u16,
-    /// USB vendor and product id.
     pub ids: (u16, u16),
 }
 
@@ -39,7 +30,6 @@ pub fn folder() -> PathBuf {
     base.join("Lykil Studio").join("via")
 }
 
-/// The definition in `folder` for USB ids `ids`.
 fn find(ids: (u16, u16)) -> Option<ViaDefinition> {
     let dir = folder();
     let _ = std::fs::create_dir_all(&dir);
@@ -66,7 +56,6 @@ fn abi(bcd: Option<u32>) -> AbiVersion {
         .unwrap_or(AbiVersion::LATEST)
 }
 
-/// The keyboard as Studio draws it, from its definition.
 fn description(def: &ViaDefinition, layers: u8) -> Description {
     Description {
         name: def.name.clone(),
@@ -106,7 +95,6 @@ fn bindings(codes: &[Vec<u16>], def: &ViaDefinition, abi: AbiVersion) -> Vec<Vec
         .collect()
 }
 
-/// Talks to a VIA keyboard until it goes; returns why.
 pub fn poll(
     mut device: ViaDevice,
     rx: &Receiver<Command>,
@@ -131,7 +119,6 @@ pub fn poll(
             };
         });
         thread::sleep(RESCAN);
-        // Gone meanwhile?
         if let Err(e) = device.uptime_ms() {
             return e.to_string();
         }
@@ -161,7 +148,6 @@ pub fn poll(
         let command = match rx.recv_timeout(RESCAN) {
             Ok(c) => c,
             Err(RecvTimeoutError::Timeout) => {
-                // Still there?
                 if let Err(e) = device.uptime_ms() {
                     return e.to_string();
                 }
@@ -187,7 +173,6 @@ pub fn poll(
             Err(DeviceError::Protocol(what)) => Some(what.to_string()),
             Err(e) => return e.to_string(),
         };
-        // Read back what the keyboard has now, refused or not.
         let codes = match device.keymap(layers, def.rows, def.cols) {
             Ok(c) => c,
             Err(e) => return e.to_string(),

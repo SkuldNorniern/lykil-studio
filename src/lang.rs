@@ -1,8 +1,4 @@
-//! English and Korean.
-//!
-//! Text is written in English in the code and looked up here; anything
-//! missing from the table stays English. `{}` in a template is filled in
-//! order by [`Lang::fill`].
+//! English and Korean. Missing text stays English.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Lang {
@@ -12,7 +8,6 @@ pub enum Lang {
 }
 
 impl Lang {
-    /// `LYKIL_LANG` (`en` or `ko`) if set, else the system language.
     pub fn detect() -> Self {
         let wanted = std::env::var("LYKIL_LANG")
             .ok()
@@ -32,7 +27,6 @@ impl Lang {
         }
     }
 
-    /// The name shown on the language switch.
     pub const fn label(self) -> &'static str {
         match self {
             Self::En => "English",
@@ -40,7 +34,6 @@ impl Lang {
         }
     }
 
-    /// A font with this language's letters.
     pub const fn font_family(self) -> &'static str {
         match self {
             Self::En => "Segoe UI",
@@ -55,7 +48,6 @@ impl Lang {
         }
     }
 
-    /// [`Self::tr`], then each `{}` replaced by the next of `args`.
     pub fn fill(self, template: &'static str, args: &[&str]) -> String {
         let mut out = String::new();
         let mut rest = self.tr(template);

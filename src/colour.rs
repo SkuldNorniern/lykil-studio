@@ -1,9 +1,7 @@
-//! Colour codes: `#rrggbb`, `#rgb` and `r, g, b`, and the way back to
-//! [`Hsv`].
+//! Colour codes and the way back to `Hsv`.
 
 use lykil::lighting::{Hsv, Rgb};
 
-/// `#rrggbb`.
 pub fn hex(c: Rgb) -> String {
     format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b)
 }

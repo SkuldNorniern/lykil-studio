@@ -1,13 +1,4 @@
 //! Lykil Studio.
-//!
-//! Finds a connected Lykil keyboard and manages it: the keymap (click a
-//! key, pick a binding), lighting (effect, colour, speed, and whether
-//! Windows Dynamic Lighting may take over), and the device (live key
-//! test, counters). The keyboard describes itself, so Studio needs no
-//! files for it.
-//!
-//! The window is one canvas drawn by [`view`]; input goes through
-//! [`app`], the keyboard lives on a thread in [`device`].
 
 mod anim;
 mod app;
@@ -37,7 +28,6 @@ use crate::app::Shared;
 
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 800;
-/// Frame time while something moves.
 const FRAME: Duration = Duration::from_millis(16);
 
 fn main() -> ExitCode {
