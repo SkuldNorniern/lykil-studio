@@ -162,6 +162,8 @@ pub enum Hit {
     ViaSquare(usize),
     /// A section of the VIA menu.
     ViaGroup(usize),
+    /// A page of effect cards.
+    EffectPage(usize),
     /// The picked desk device: its own effect or the keyboard's.
     DeviceOwn(bool),
     DeviceEffect(Effect),
@@ -218,6 +220,8 @@ pub struct Ui {
     pub group: usize,
     /// The VIA menu section on the lighting page.
     pub via_group: usize,
+    /// The page of effect cards shown when they do not all fit.
+    pub effect_page: usize,
     pub macro_id: usize,
     pub macro_text: Option<String>,
     pub mouse: (f32, f32),
@@ -427,6 +431,17 @@ impl Shared {
                 };
                 if let Some(n) = next {
                     self.switch_tab(Tab::ALL[n]);
+                }
+            }
+            Some(Hit::ViaOption(..) | Hit::EffectPage(_)) => {
+                let at = self.ui.effect_page;
+                let to = self.ui.hits.iter().find_map(|(_, h)| match *h {
+                    Hit::EffectPage(p) if (p < at) == up => Some(p),
+                    _ => None,
+                });
+                match to {
+                    Some(p) => self.ui.effect_page = p,
+                    None => return false,
                 }
             }
             Some(Hit::Layer(_)) => {

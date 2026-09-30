@@ -12,7 +12,7 @@ use crate::app::{Hit, Shared};
 use crate::devices::via::{ViaGroup, ViaSetting, groups};
 use crate::draw::{Area, Hits, Pen, color};
 use crate::keyboard::{self, Keys, Presses};
-use crate::pages::lighting::{panels, points};
+use crate::pages::lighting::{effect_about, effect_strip, panels, points};
 use crate::widgets::colour::square_and_bar;
 use crate::widgets::effects::{EffectCard, effect_grid};
 use crate::widgets::{self, Track, segmented};
@@ -81,7 +81,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     for a in [effects, picker, side] {
         pen.round(a, pen.s(12.0), color::SURFACE)?;
     }
-    effect_cards(pen, effects.inset(pen.s(16.0)), (group, settings), hits)?;
+    effect_cards(pen, effects.inset(pen.s(16.0)), (group, look), shared, hits)?;
     picker_card(
         pen,
         picker.inset(pen.s(16.0)),
@@ -95,8 +95,8 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         .into())
 }
 
-/// What the preview shows: the section's colour at its brightness, dark
-/// when its effect is off.
+/// What the preview shows: the section's colour at its brightness and
+/// speed, dark when its effect is off.
 fn look(group: &ViaGroup, settings: &[ViaSetting]) -> Settings {
     let get = |i: Option<usize>| i.and_then(|i| settings.get(i));
     let (h, s) =
@@ -107,17 +107,58 @@ fn look(group: &ViaGroup, settings: &[ViaSetting]) -> Settings {
     Settings {
         effect: if off { Effect::Off } else { Effect::Solid },
         color: Hsv::new(h, s, v),
+        speed: get(group.speed).map_or(Settings::DEFAULT.speed, ViaSetting::byte),
         ..Settings::DEFAULT
     }
+}
+
+/// QMK effects by a word in their VIA name, first match wins: a line about
+/// them and the Lykil effect closest to them, which their card plays.
+const FAMILIES: [(&str, &str, Effect); 15] = [
+    ("off", "", Effect::Off),
+    ("reactive", "Pressed keys light up", Effect::Reactive),
+    ("splash", "Waves from pressed keys", Effect::Ripple),
+    ("heatmap", "", Effect::Heatmap),
+    ("rain", "", Effect::Rain),
+    ("twinkle", "", Effect::Starlight),
+    ("pixel", "Keys change at random", Effect::Starlight),
+    ("breathing", "", Effect::Breathing),
+    ("mood", "", Effect::Cycle),
+    ("cycle all", "", Effect::Cycle),
+    ("test", "Steps through red, green and blue", Effect::Cycle),
+    ("alphas", "Letters and mods in two colours", Effect::Solid),
+    ("solid", "", Effect::Solid),
+    ("christmas", "Red and green", Effect::Wave),
+    ("", "Colours moving across", Effect::Wave),
+];
+
+/// `name`'s line and closest Lykil effect, from [`FAMILIES`].
+fn family(name: &str) -> (&'static str, Effect) {
+    let name = name.to_lowercase();
+    FAMILIES
+        .iter()
+        .find(|(word, ..)| name.contains(word))
+        .map_or(("", Effect::Wave), |&(_, about, e)| {
+            (
+                if about.is_empty() {
+                    effect_about(e)
+                } else {
+                    about
+                },
+                e,
+            )
+        })
 }
 
 fn effect_cards(
     pen: &mut Pen<'_>,
     area: Area,
-    (group, settings): (&ViaGroup, &[ViaSetting]),
+    (group, look): (&ViaGroup, Settings),
+    shared: &Shared,
     hits: &mut Hits,
 ) -> AureaResult<()> {
     let lang = pen.lang;
+    let settings = &shared.keyboard.via_settings;
     widgets::label(pen, lang.tr("EFFECT"), area.x, area.y)?;
     let grid = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h - pen.s(20.0));
     let Some((index, setting)) = group.effect.and_then(|i| Some((i, settings.get(i)?))) else {
@@ -133,16 +174,36 @@ fn effect_cards(
     let ViaControlKind::Dropdown(options) = &setting.control.kind else {
         return Ok(());
     };
+    let looks: Vec<(&str, Effect)> = options.iter().map(|(name, _)| family(name)).collect();
+    // A dozen QMK names start "Solid Reactive"; the rest of it is what
+    // tells them apart on a narrow card.
+    let names: Vec<String> = options
+        .iter()
+        .map(|(name, _)| match name.strip_prefix("Solid Reactive") {
+            Some(rest) => format!("Reactive{rest}"),
+            None => name.clone(),
+        })
+        .collect();
     let cards: Vec<EffectCard<'_>> = options
         .iter()
-        .map(|(name, value)| EffectCard {
+        .zip(&looks)
+        .zip(&names)
+        .map(|(((_, value), (about, _)), name)| EffectCard {
             name,
-            about: "",
+            about: lang.tr(about),
             hit: Hit::ViaOption(index, *value),
             active: *value == setting.byte(),
         })
         .collect();
-    effect_grid(pen, grid, &cards, &mut |_, _, _| Ok(()), hits)
+    let time = pen.anim.time();
+    effect_grid(
+        pen,
+        grid,
+        &cards,
+        shared.ui.effect_page,
+        &mut |pen, bar, i| effect_strip(pen, bar, look, looks[i].1, time, &shared.keyboard),
+        hits,
+    )
 }
 
 fn picker_card(

@@ -310,7 +310,7 @@ pub const fn effect_name(e: Effect) -> &'static str {
     }
 }
 
-const fn effect_about(e: Effect) -> &'static str {
+pub const fn effect_about(e: Effect) -> &'static str {
     match e {
         Effect::Off => "LEDs off",
         Effect::Solid => "One steady colour",
@@ -361,6 +361,7 @@ fn effect_cards(
         pen,
         grid,
         &cards,
+        0,
         &mut |pen, bar, i| effect_strip(pen, bar, settings, Effect::ALL[i], time, kb),
         hits,
     )

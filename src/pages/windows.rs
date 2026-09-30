@@ -346,6 +346,7 @@ fn own_effect(
         pen,
         grid,
         &cards,
+        0,
         &mut |pen, bar, i| {
             lighting::effect_strip(pen, bar, own, effects[i], time, &shared.keyboard)
         },

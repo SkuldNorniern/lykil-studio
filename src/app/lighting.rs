@@ -79,7 +79,11 @@ impl Shared {
             }
             Hit::Swatch(c) => self.pick(colour::to_hsv(c), tx),
             Hit::ViaOption(i, v) => self.set_via(i, 0, v, tx),
-            Hit::ViaGroup(g) => self.ui.via_group = g,
+            Hit::ViaGroup(g) => {
+                self.ui.via_group = g;
+                self.ui.effect_page = 0;
+            }
+            Hit::EffectPage(p) => self.ui.effect_page = p,
             Hit::ViaToggle(i, on) => self.set_via(i, 0, u8::from(on), tx),
             Hit::Slider(_)
             | Hit::Square
