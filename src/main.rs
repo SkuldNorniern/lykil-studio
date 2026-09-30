@@ -12,12 +12,10 @@ mod keyboard;
 mod lamps;
 mod lang;
 mod legend;
-mod lights;
+mod pages;
 mod via;
-mod via_lights;
 mod view;
 mod widgets;
-mod windows;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

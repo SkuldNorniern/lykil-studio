@@ -219,7 +219,7 @@ pub fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
             .copied()
             .flatten()
             .map_or(Rgb::OFF, |p| {
-                crate::lights::preview(*settings, p, info.index, *time, presses, points)
+                crate::pages::lighting::preview(*settings, p, info.index, *time, presses, points)
             })
     };
     // A dark LED leaves the cap visible; light adds to it.
