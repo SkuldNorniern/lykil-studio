@@ -107,16 +107,13 @@ fn run() -> aurea::AureaResult<()> {
         }
     });
 
-    // Frames come only while something moves: eased values every frame,
-    // the lighting preview every other one.
+    // Frames come only while something moves.
     let ticking = Arc::clone(&shared);
     thread::spawn(move || {
-        let mut odd = false;
         loop {
             thread::sleep(FRAME);
-            odd = !odd;
             let s = lock(&ticking);
-            let moving = s.ui.anim.busy() || (odd && s.animating());
+            let moving = s.ui.anim.busy() || s.animating();
             drop(s);
             if moving {
                 request_canvas_redraw(id);
