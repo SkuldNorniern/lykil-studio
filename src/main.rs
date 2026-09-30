@@ -30,6 +30,10 @@ use crate::app::Shared;
 
 const WIDTH: u32 = 1280;
 const HEIGHT: u32 = 800;
+/// The canvas asks for only this much and grows with the window. On macOS
+/// its creation size is also its intrinsic size, which a window cannot be
+/// dragged below.
+const SMALLEST: (u32, u32) = (800, 520);
 const FRAME: Duration = Duration::from_millis(16);
 
 /// Where Studio keeps its files: the VIA folder and the desk.
@@ -70,7 +74,7 @@ fn main() -> ExitCode {
 
 fn run() -> aurea::AureaResult<()> {
     let mut window = Window::new("Lykil Studio", WIDTH.cast_signed(), HEIGHT.cast_signed())?;
-    let canvas = Canvas::new(WIDTH, HEIGHT, RendererBackend::Cpu)?;
+    let canvas = Canvas::new(SMALLEST.0, SMALLEST.1, RendererBackend::Cpu)?;
     canvas.set_background_color(draw::color::BACKGROUND);
 
     let shared = Arc::new(Mutex::new(Shared::default()));
