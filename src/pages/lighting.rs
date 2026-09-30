@@ -155,7 +155,10 @@ fn status_line(
             lang.tr("The keyboard runs this effect. Windows may take the LEDs at any time."),
             color::GOOD,
         ),
-        _ => (lang.tr("The keyboard runs this effect."), color::GOOD),
+        _ => (
+            lang.tr("The keyboard runs this effect. Windows does not see it as a lighting device."),
+            color::GOOD,
+        ),
     };
     let mut text = text.to_string();
     if shared.lamp_sync {

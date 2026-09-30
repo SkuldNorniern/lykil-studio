@@ -149,10 +149,6 @@ const KO: &[(&str, &str)] = &[
         "키보드가 이 효과를 켜고 있습니다. Windows가 언제든 LED를 가져갈 수 있습니다.",
     ),
     (
-        "The keyboard runs this effect.",
-        "키보드가 이 효과를 켜고 있습니다.",
-    ),
-    (
         "Studio lights {} other devices with it.",
         "Studio가 다른 장치 {}개도 함께 켭니다.",
     ),
@@ -226,6 +222,14 @@ const KO: &[(&str, &str)] = &[
     ),
     ("Seen, but no answer:", "보이지만 응답이 없음:"),
     ("{} (Lykil only)", "{} (Lykil 전용)"),
+    (
+        "The keyboard restarts in a second so Windows sees the change.",
+        "Windows가 바뀐 설정을 알 수 있도록 키보드가 잠시 뒤 다시 시작합니다.",
+    ),
+    (
+        "The keyboard runs this effect. Windows does not see it as a lighting device.",
+        "키보드가 이 효과를 켜고 있습니다. Windows는 이 키보드를 조명 장치로 보지 않습니다.",
+    ),
     ("The keyboard's", "키보드와 같이"),
     ("Its own", "따로"),
     (

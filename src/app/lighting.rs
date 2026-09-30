@@ -56,7 +56,19 @@ impl Shared {
             }
             Hit::ClearAll => self.fill(Rgb::OFF, tx),
             Hit::Effect(effect) => self.change_lighting(tx, |s| s.effect = effect),
-            Hit::OsLighting(on) => self.change_lighting(tx, |s| s.os_lighting = on),
+            Hit::OsLighting(on) => {
+                if self.lighting().is_some_and(|s| s.os_lighting != on) {
+                    // The firmware only has its lighting device for Windows
+                    // while Windows may use it, so it starts over to switch.
+                    self.ui.notice = Some(
+                        self.ui
+                            .lang
+                            .tr("The keyboard restarts in a second so Windows sees the change.")
+                            .into(),
+                    );
+                }
+                self.change_lighting(tx, |s| s.os_lighting = on);
+            }
             Hit::Colours(p) => self.change_lighting(tx, |s| s.palette = p),
             Hit::Second(second) => self.ui.second = second,
             Hit::LayerKeys(on) => self.change_lighting(tx, |s| s.layer_keys = on),
