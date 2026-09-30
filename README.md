@@ -38,7 +38,8 @@ close VIA while Studio runs: every program with the raw HID interface open gets 
 the whole window is one canvas. how it is split:
 
 - `view.rs`: the frame (header, tabs, footer) and which page to draw. it records where every control is
-- `pages/`: one file per page. `widgets/`: controls more than one page uses (sliders, chips, segmented bars, the colour square and hue bar). `keyboard.rs`: any keyed device drawn from its description
+- UI in three layers. `components/`: small parts that each draw one thing (label, pill, knob, card face, dot, colour square). `widgets/`: built from components (slider, segmented bar, colour picker, effect grid with pager, status line). `pages/`: one file per page, laid out from widgets and a few components, no drawing of their own. new UI goes in the lowest layer that fits
+- `keyboard.rs`: any keyed device drawn from its description. `effects.rs`: Lykil effect names and the firmware's `shade` run for previews. `format.rs`: numbers and times
 - `app/`: state and input, matched against the recorded controls, one file per page
 - `devices/`: the connected device on its own thread. `Keyboard` is what Studio knows, `Command` what it asks; `lcp.rs` talks to Lykil keyboards, `via.rs` to VIA ones. another kind of device is another driver next to these
 - `lamps/`: other Dynamic Lighting devices on Windows and where they sit on the desk
