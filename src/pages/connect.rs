@@ -4,10 +4,12 @@
 use aurea::AureaResult;
 
 use crate::app::Hit;
+use crate::components::surface::panel;
+use crate::components::text::heading;
 use crate::devices::{Connection, Keyboard};
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
-use crate::widgets::pills;
+use crate::widgets::pills::pills;
 
 pub fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard, hits: &mut Hits) -> AureaResult<()> {
     let lang = pen.lang;
@@ -26,7 +28,7 @@ pub fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard, hits: &mut Hits) ->
         pen.s(460.0),
         pen.s(140.0) + extra,
     );
-    pen.round(card, pen.s(14.0), color::SURFACE)?;
+    panel(pen, card)?;
     let title = Area::new(card.x, card.y + pen.s(30.0), card.w, pen.s(24.0));
     pen.centred(
         lang.tr("Plug in a Lykil or VIA keyboard"),
@@ -85,16 +87,15 @@ pub fn needs_definition(
         pen.s(560.0),
         pen.s(220.0),
     );
-    pen.round(card, pen.s(14.0), color::SURFACE)?;
+    panel(pen, card)?;
     let x = card.x + pen.s(28.0);
     let w = card.w - pen.s(56.0);
     let (vid, pid) = kb.via.map_or((0, 0), |v| v.ids);
-    pen.text(
+    heading(
+        pen,
         &lang.fill("{} speaks VIA", &[&kb.name]),
         x,
         card.y + pen.s(26.0),
-        &pen.bold(18.0),
-        color::TEXT,
     )?;
     let lines = [
         lang.fill(

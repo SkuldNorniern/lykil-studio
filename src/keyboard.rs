@@ -219,14 +219,14 @@ pub fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
             .copied()
             .flatten()
             .map_or(Rgb::OFF, |p| {
-                crate::pages::lighting::preview(*settings, p, info.index, *time, presses, points)
+                crate::effects::preview(*settings, p, info.index, *time, presses, points)
             })
     };
     // A dark LED leaves the cap visible; light adds to it.
-    let face = color::glow(color::SURFACE, crate::widgets::colour::rgb(lit));
+    let face = color::glow(color::SURFACE, crate::colour::rgb(lit));
     match brush {
         Some(b) if info.led.is_some() => {
-            color::mix(face, crate::widgets::colour::rgb(*b), info.hovered * 0.6)
+            color::mix(face, crate::colour::rgb(*b), info.hovered * 0.6)
         }
         _ => color::mix(face, color::TEXT, info.hovered * 0.15),
     }

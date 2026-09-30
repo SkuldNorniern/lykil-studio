@@ -5,12 +5,16 @@ use lykil::binding::Binding;
 use lykil_protocol::describe::Description;
 
 use crate::app::{Hit, Shared};
+use crate::components::button::{Tone, cap_face, keycap, pill, pill_width};
+use crate::components::dot::mark;
+use crate::components::surface::{dim, list_row};
+use crate::components::text::label;
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
 use crate::edit::{self, Hold};
 use crate::keyboard::{self, Keys};
 use crate::legend;
-use crate::widgets::{chip, label, pills};
+use crate::widgets::pills::{pill_flow, pills};
 
 pub fn keymap_tab(
     pen: &mut Pen<'_>,
@@ -49,7 +53,7 @@ pub fn keymap_tab(
     if panel.h < pen.s(60.0) {
         return Ok(String::new());
     }
-    pen.round(panel, pen.s(12.0), color::SURFACE)?;
+    crate::components::surface::panel(pen, panel)?;
     let desc = kb.description.as_ref();
     let hovered = hovered_key(ui, desc, bindings, &layers);
     let Some((index, info)) = ui.selected.and_then(|k| desc?.keys.get(k).map(|d| (k, d))) else {
@@ -106,13 +110,7 @@ pub fn key_card(
     let lang = pen.lang;
     let (main, _) = legend::keycap(current, layers);
     let cap = Area::new(left.x, left.y, pen.s(58.0), pen.s(58.0));
-    pen.round(
-        cap,
-        pen.s(8.0),
-        color::mix(color::ACCENT, color::BACKGROUND, 0.5),
-    )?;
-    pen.round(cap.inset(pen.s(3.0)), pen.s(7.0), color::ACCENT)?;
-    pen.fitted(&main, cap.inset(pen.s(8.0)), 16.0, 8.0, color::ACCENT_TEXT)?;
+    cap_face(pen, cap, &main)?;
     let tx = cap.right() + pen.s(14.0);
     pen.text(
         &lang.fill("{} on {}", &[id, layer_name]),
@@ -177,7 +175,7 @@ pub fn key_parts(
             let hold = Hold::Layer(lykil::layer::LayerId(l));
             items.push((name.clone(), Hit::Hold(hold), now == hold));
         }
-        y = small_pills(
+        y += pill_flow(
             pen,
             Area::new(area.x, y, area.w, area.bottom() - y),
             &items,
@@ -191,7 +189,7 @@ pub fn key_parts(
             .iter()
             .map(|(name, m)| ((*name).to_string(), Hit::With(*m), mods.0 & m.0 != 0))
             .collect();
-        small_pills(
+        pill_flow(
             pen,
             Area::new(area.x, y, area.w, area.bottom() - y),
             &items,
@@ -199,42 +197,6 @@ pub fn key_parts(
         )?;
     }
     Ok(())
-}
-
-pub fn small_pills(
-    pen: &mut Pen<'_>,
-    area: Area,
-    items: &[(String, Hit, bool)],
-    hits: &mut Hits,
-) -> AureaResult<f32> {
-    let font = pen.font(11.0);
-    let pill_h = pen.s(24.0);
-    let (mut x, mut y) = (area.x, area.y);
-    for (text, hit, active) in items {
-        let w = pen.width(text, &font) + pen.s(18.0);
-        if x + w > area.right() && x > area.x {
-            x = area.x;
-            y += pill_h + pen.s(5.0);
-        }
-        if y + pill_h > area.bottom() {
-            break;
-        }
-        let a = Area::new(x, y, w, pill_h);
-        let hover = pen.hover(a, *hit);
-        let (bg, fg) = if *active {
-            (color::ACCENT, color::ACCENT_TEXT)
-        } else {
-            (
-                color::mix(color::RAISED, color::HOVER, hover),
-                color::mix(color::DIM, color::TEXT, hover),
-            )
-        };
-        pen.round(a, pill_h / 2.0, bg)?;
-        pen.centred(text, a, &font, fg)?;
-        hits.push((a, *hit));
-        x += w + pen.s(5.0);
-    }
-    Ok(y + pill_h)
 }
 
 /// What the keymap page does, while no key is picked.
@@ -298,19 +260,14 @@ pub fn layer_bar(
         lang.tr("Reset keymap")
     };
     let font = pen.bold(12.0);
-    let rw = pen.width(reset, &font) + pen.s(24.0);
+    let rw = pill_width(pen, reset, &font, 12.0);
     let ra = Area::new(body.right() - rw, body.y, rw, pen.s(30.0));
-    let t = pen.hover(ra, Hit::ResetKeymap);
-    let (bg, fg) = if confirm_reset {
-        (color::BAD, color::ACCENT_TEXT)
+    let tone = if confirm_reset {
+        Tone::Danger
     } else {
-        (
-            color::mix(color::RAISED, color::HOVER, t),
-            color::mix(color::DIM, color::TEXT, t),
-        )
+        Tone::Quiet
     };
-    pen.round(ra, pen.s(15.0), bg)?;
-    pen.centred(reset, ra, &font, fg)?;
+    pill(pen, ra, (reset, &font), Hit::ResetKeymap, tone)?;
     hits.push((ra, Hit::ResetKeymap));
     Ok(())
 }
@@ -363,7 +320,7 @@ pub fn palette(
             break;
         }
         let a = Area::new(x, y, w, cap);
-        chip(
+        keycap(
             pen,
             (a, Hit::Palette(*b)),
             &main,
@@ -373,7 +330,7 @@ pub fn palette(
         if holds(*b) {
             hits.push((a, Hit::Palette(*b)));
         } else {
-            pen.veil(a, color::SURFACE, 0.65)?;
+            dim(pen, a)?;
         }
         x += w + gap;
     }
@@ -403,23 +360,8 @@ pub fn group_list(
         if a.bottom() > area.bottom() {
             break;
         }
-        let active = i == chosen;
         let has_current = group.items.contains(&current);
-        let t = pen.hover(a, Hit::Group(i));
-        let bg = if active {
-            color::RAISED
-        } else {
-            color::mix(color::SURFACE, color::RAISED, 0.5 * t)
-        };
-        pen.round(a, pen.s(6.0), bg)?;
-        if active {
-            pen.round(
-                Area::new(a.x, a.y + pen.s(5.0), pen.s(3.0), a.h - pen.s(10.0)),
-                pen.s(1.5),
-                color::ACCENT,
-            )?;
-        }
-        let fg = if active { color::TEXT } else { color::DIM };
+        let fg = list_row(pen, a, Hit::Group(i), i == chosen)?;
         let name = if group.items.iter().any(|b| holds(*b)) {
             lang.tr(group.name).to_string()
         } else {
@@ -433,12 +375,7 @@ pub fn group_list(
             fg,
         )?;
         if has_current {
-            pen.circle(
-                a.right() - pen.s(10.0),
-                a.y + a.h / 2.0,
-                pen.s(3.0),
-                color::ACCENT,
-            )?;
+            mark(pen, a.right() - pen.s(10.0), a.y + a.h / 2.0)?;
         }
         hits.push((a, Hit::Group(i)));
     }

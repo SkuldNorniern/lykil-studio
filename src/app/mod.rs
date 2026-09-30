@@ -287,7 +287,7 @@ impl Shared {
             .iter()
             .map(|k| k.cell.is_some_and(|c| self.keyboard.closed(c)))
             .collect();
-        let points = crate::pages::lighting::points(desc, true);
+        let points = crate::effects::points(desc, true);
         let size = self.lighting().map_or(0, |s| s.size);
         self.ui.presses.set_reach(&points, size);
         let time = self.ui.anim.time();

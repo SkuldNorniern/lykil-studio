@@ -8,9 +8,9 @@ use crate::app::{Hit, Shared, Tab};
 use crate::devices::{Connection, Keyboard};
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
+use crate::format::uptime;
 use crate::pages::lighting as lights;
 use crate::pages::windows;
-use crate::widgets::uptime;
 use crate::{icons, pages};
 
 const HEADER: f32 = 60.0;

@@ -3,9 +3,12 @@
 mod anim;
 mod app;
 mod colour;
+mod components;
 mod devices;
 mod draw;
 mod edit;
+mod effects;
+mod format;
 mod icons;
 mod keyboard;
 mod lamps;

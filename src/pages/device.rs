@@ -6,8 +6,10 @@ use lykil_protocol::lcp;
 use crate::app::Shared;
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
+use crate::format::{group, uptime};
 use crate::keyboard::{self, Keys};
-use crate::widgets::{group, label, uptime};
+use crate::widgets::layout::cell;
+use crate::widgets::stat::stat;
 
 pub fn device_tab(
     pen: &mut Pen<'_>,
@@ -77,32 +79,19 @@ pub fn device_tab(
         ));
     }
     let top = used.bottom() + pen.s(20.0);
-    let cols = 5.0;
-    let gap = pen.s(10.0);
-    let cw = (body.w - gap * (cols - 1.0)) / cols;
-    let ch = pen.s(62.0);
+    let grid = Area::new(body.x, top, body.w, body.bottom() - top);
     for (i, (name, value)) in cards.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let (col, row) = ((i % 5) as f32, (i / 5) as f32);
-        let a = Area::new(body.x + col * (cw + gap), top + row * (ch + gap), cw, ch);
+        let a = cell(grid, (5, pen.s(10.0), pen.s(62.0)), i);
         if a.bottom() > body.bottom() {
             break;
         }
-        pen.round(a, pen.s(10.0), color::SURFACE)?;
-        label(pen, lang.tr(name), a.x + pen.s(14.0), a.y + pen.s(12.0))?;
-        let v = Area::new(
-            a.x + pen.s(14.0),
-            a.y + pen.s(30.0),
-            a.w - pen.s(28.0),
-            pen.s(20.0),
-        );
-        let c = match *name {
+        let tone = match *name {
             "FAULTS" | "WATCHDOG RESETS" if value != "0" => color::BAD,
             _ => color::TEXT,
         };
-        pen.fitted_left(value, v, 15.0, 9.0, c)?;
-        let _ = &hits;
+        stat(pen, a, lang.tr(name), (value, tone))?;
     }
+    let _ = &hits;
     Ok(lang
         .tr("Keys light up while pressed: a quick way to check every switch.")
         .into())

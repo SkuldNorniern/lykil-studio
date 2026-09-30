@@ -9,13 +9,21 @@ use lykil::lighting::{Effect, Hsv, Settings};
 use lykil_qmk::import::ViaControlKind;
 
 use crate::app::{Hit, Shared};
+use crate::components::surface::panel;
+use crate::components::text::label;
+use crate::components::track::Track;
 use crate::devices::via::{ViaGroup, ViaSetting, groups};
 use crate::draw::{Area, Hits, Pen, color};
+use crate::effects::{about as effect_about, points};
+use crate::format::percent;
 use crate::keyboard::{self, Keys, Presses};
-use crate::pages::lighting::{effect_about, effect_strip, panels, points};
-use crate::widgets::colour::square_and_bar;
-use crate::widgets::effects::{EffectCard, effect_grid};
-use crate::widgets::{self, Track, segmented};
+use crate::widgets::colour::picker;
+use crate::widgets::effects::{EffectCard, Strips, effect_grid};
+use crate::widgets::layout::lighting_panels;
+use crate::widgets::pills::pill_flow;
+use crate::widgets::segmented::{labelled, segmented};
+use crate::widgets::slider::slider;
+use crate::widgets::status::status_line;
 
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
     let lang = pen.lang;
@@ -61,30 +69,23 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         hits,
     )?;
     let line = Area::new(body.x, used.bottom() + pen.s(10.0), body.w, pen.s(18.0));
-    pen.circle(
-        line.x + pen.s(8.0),
-        line.y + line.h / 2.0,
-        pen.s(4.0),
-        color::GOOD,
-    )?;
-    pen.fitted_left(
+    status_line(
+        pen,
+        line,
         lang.tr("The keyboard runs this effect. The picture shows its colour, VIA effects are not played here."),
-        Area::new(line.x + pen.s(20.0), line.y, line.w - pen.s(24.0), line.h),
-        12.0,
-        8.0,
-        color::DIM,
+        color::GOOD,
     )?;
 
     let top = line.bottom() + pen.s(10.0);
     let rest = Area::new(body.x, top, body.w, body.bottom() - top);
-    let (effects, picker, side) = panels(pen, rest, pen.s(16.0));
-    for a in [effects, picker, side] {
-        pen.round(a, pen.s(12.0), color::SURFACE)?;
+    let (effects, colours, side) = lighting_panels(pen, rest, pen.s(16.0));
+    for a in [effects, colours, side] {
+        panel(pen, a)?;
     }
     effect_cards(pen, effects.inset(pen.s(16.0)), (group, look), shared, hits)?;
     picker_card(
         pen,
-        picker.inset(pen.s(16.0)),
+        colours.inset(pen.s(16.0)),
         look.color,
         (get(group.color), group.color),
         hits,
@@ -159,7 +160,7 @@ fn effect_cards(
 ) -> AureaResult<()> {
     let lang = pen.lang;
     let settings = &shared.keyboard.via_settings;
-    widgets::label(pen, lang.tr("EFFECT"), area.x, area.y)?;
+    label(pen, lang.tr("EFFECT"), area.x, area.y)?;
     let grid = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h - pen.s(20.0));
     let Some((index, setting)) = group.effect.and_then(|i| Some((i, settings.get(i)?))) else {
         pen.fitted_left(
@@ -188,22 +189,19 @@ fn effect_cards(
         .iter()
         .zip(&looks)
         .zip(&names)
-        .map(|(((_, value), (about, _)), name)| EffectCard {
+        .map(|(((_, value), (about, e)), name)| EffectCard {
             name,
             about: lang.tr(about),
             hit: Hit::ViaOption(index, *value),
             active: *value == setting.byte(),
+            plays: (look, *e),
         })
         .collect();
-    let time = pen.anim.time();
-    effect_grid(
-        pen,
-        grid,
-        &cards,
-        shared.ui.effect_page,
-        &mut |pen, bar, i| effect_strip(pen, bar, look, looks[i].1, time, &shared.keyboard),
-        hits,
-    )
+    let strips = Strips {
+        time: pen.anim.time(),
+        key_colors: &[],
+    };
+    effect_grid(pen, grid, &cards, (shared.ui.effect_page, strips), hits)
 }
 
 fn picker_card(
@@ -214,7 +212,7 @@ fn picker_card(
     hits: &mut Hits,
 ) -> AureaResult<()> {
     let lang = pen.lang;
-    widgets::label(pen, lang.tr("COLOUR"), area.x, area.y)?;
+    label(pen, lang.tr("COLOUR"), area.x, area.y)?;
     let (Some(_), Some(index)) = (colour, index) else {
         pen.fitted_left(
             lang.tr("This section has no colour setting"),
@@ -230,7 +228,7 @@ fn picker_card(
         .min(pen.s(170.0))
         .max(pen.s(60.0));
     let square = Area::new(area.x, top, side, side);
-    square_and_bar(
+    picker(
         pen,
         square,
         c,
@@ -286,10 +284,10 @@ fn side_card(
         };
         let t = s.fraction();
         let row = Area::new(area.x, y, area.w, pen.s(36.0));
-        widgets::slider(
+        slider(
             pen,
             row,
-            (lang.tr(name), &widgets::percent(t)),
+            (lang.tr(name), &percent(t)),
             (t, Hit::ViaRange(i), Track::Shades(shade)),
             shared,
             hits,
@@ -316,15 +314,15 @@ fn other(
     hits: &mut Hits,
 ) -> AureaResult<f32> {
     let lang = pen.lang;
-    let label = s.control.label.to_uppercase();
+    let name = s.control.label.to_uppercase();
     match &s.control.kind {
         ViaControlKind::Range { .. } => {
             let t = s.fraction();
             let row = Area::new(area.x, area.y, area.w, pen.s(36.0));
-            widgets::slider(
+            slider(
                 pen,
                 row,
-                (&label, &widgets::percent(t)),
+                (&name, &percent(t)),
                 (t, Hit::ViaRange(index), Track::Plain),
                 shared,
                 hits,
@@ -332,28 +330,21 @@ fn other(
             Ok(pen.s(36.0))
         }
         ViaControlKind::Toggle => {
-            widgets::label(pen, &label, area.x, area.y)?;
-            let bar = Area::new(
-                area.x,
-                area.y + pen.s(18.0),
-                area.w.min(pen.s(220.0)),
-                pen.s(30.0),
-            );
             let items = [
                 (lang.tr("Off"), Hit::ViaToggle(index, false)),
                 (lang.tr("On"), Hit::ViaToggle(index, true)),
             ];
-            segmented(
+            labelled(
                 pen,
-                bar,
+                (area.x, area.y, area.w.min(pen.s(220.0)), pen.s(30.0)),
+                &name,
                 (&items, 3000 + index),
                 usize::from(s.byte() != 0),
                 hits,
-            )?;
-            Ok(pen.s(48.0))
+            )
         }
         ViaControlKind::Dropdown(options) => {
-            widgets::label(pen, &label, area.x, area.y)?;
+            label(pen, &name, area.x, area.y)?;
             let items: Vec<(String, Hit, bool)> = options
                 .iter()
                 .map(|(name, value)| {
@@ -365,7 +356,7 @@ fn other(
                 })
                 .collect();
             let flow = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h);
-            Ok(pen.s(20.0) + widgets::chip_flow(pen, flow, &items, hits)?)
+            Ok(pen.s(20.0) + pill_flow(pen, flow, &items, hits)?)
         }
         // A second colour in one section is rare; the first one is in the
         // picker.

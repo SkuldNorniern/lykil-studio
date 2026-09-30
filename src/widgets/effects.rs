@@ -1,10 +1,14 @@
-//! The grid of effect cards both lighting pages use.
+//! Effect cards in a grid: a name, a line about it and a strip playing it,
+//! on pages when they do not all fit.
 
 use aurea::AureaResult;
+use lykil::lighting::{Effect, Rgb, Settings};
 
-use crate::anim::{Key, rate};
 use crate::app::Hit;
+use crate::components::led_strip::led_strip;
+use crate::components::surface::choice;
 use crate::draw::{Area, Hits, Pen, color};
+use crate::widgets::pager::pager;
 
 /// One effect to pick.
 pub struct EffectCard<'a> {
@@ -13,18 +17,26 @@ pub struct EffectCard<'a> {
     pub about: &'a str,
     pub hit: Hit,
     pub active: bool,
+    /// What its strip plays: these settings with this effect.
+    pub plays: (Settings, Effect),
 }
 
-/// Cards four across. Each gets its `about` line and a strip `strip`
-/// paints (by card index) when tall enough. If they do not all fit, they
-/// go on pages of whole rows with a pager under them; `page` is the one
-/// shown.
+/// What the strips need besides their cards.
+#[derive(Clone, Copy)]
+pub struct Strips<'a> {
+    /// Seconds, for the animation.
+    pub time: f32,
+    /// For per-key cards.
+    pub key_colors: &'a [Rgb],
+}
+
+/// Cards four across. If they do not all fit, they go on pages of whole
+/// rows with a pager under them; `page` is the one shown.
 pub fn effect_grid(
     pen: &mut Pen<'_>,
     area: Area,
     cards: &[EffectCard<'_>],
-    page: usize,
-    strip: &mut dyn FnMut(&mut Pen<'_>, Area, usize) -> AureaResult<()>,
+    (page, strips): (usize, Strips<'_>),
     hits: &mut Hits,
 ) -> AureaResult<()> {
     let gap = pen.s(8.0);
@@ -56,51 +68,27 @@ pub fn effect_grid(
         #[allow(clippy::cast_precision_loss)]
         let (col, row) = (((i - first) % cols) as f32, ((i - first) / cols) as f32);
         let a = Area::new(grid.x + col * (cw + gap), grid.y + row * (ch + gap), cw, ch);
-        card_at(pen, a, (card, i), strip)?;
+        effect_card(pen, a, (card, i), strips)?;
         hits.push((a, card.hit));
     }
     if pages > 1 {
-        pager(
-            pen,
-            Area::new(area.x, area.bottom() - pen.s(22.0), area.w, pen.s(22.0)),
-            page,
-            pages,
-            hits,
-        )?;
+        let under = Area::new(area.x, area.bottom() - pen.s(22.0), area.w, pen.s(22.0));
+        pager(pen, under, (page, pages), Hit::EffectPage, hits)?;
     }
     Ok(())
 }
 
-fn card_at(
+/// One card: the name, shrunk then cut short if long, the line about it
+/// and, when there is room, its strip.
+fn effect_card(
     pen: &mut Pen<'_>,
     a: Area,
     (card, i): (&EffectCard<'_>, usize),
-    strip: &mut dyn FnMut(&mut Pen<'_>, Area, usize) -> AureaResult<()>,
+    strips: Strips<'_>,
 ) -> AureaResult<()> {
-    let t = pen.hover(a, card.hit);
-    let bg = if card.active {
-        color::mix(color::RAISED, color::ACCENT, 0.18)
-    } else {
-        color::mix(color::RAISED, color::HOVER, t)
-    };
-    pen.round(a, pen.s(10.0), bg)?;
-    let sel = pen.anim.to(
-        Key::Selected(1000 + i),
-        if card.active { 1.0 } else { 0.0 },
-        rate::HOVER,
-    );
-    if sel > 0.01 {
-        pen.outline(
-            a,
-            pen.s(10.0),
-            pen.s(2.0),
-            color::mix(bg, color::ACCENT, sel),
-        )?;
-    }
-    let fg = if card.active { color::TEXT } else { color::DIM };
+    let fg = choice(pen, a, (card.hit, i), card.active)?;
     let inner = a.inset(pen.s(10.0));
     let title = Area::new(inner.x, inner.y, inner.w, pen.s(16.0));
-    // Long names get smaller first, then cut short.
     let mut font = pen.bold(13.0);
     while pen.width(card.name, &font) > title.w && font.size > pen.s(10.5) {
         font.size -= pen.s(0.5);
@@ -112,46 +100,7 @@ fn card_at(
     }
     let bar = Area::new(inner.x, inner.bottom() - pen.s(12.0), inner.w, pen.s(12.0));
     if bar.y > about.bottom() {
-        strip(pen, bar, i)?;
-    }
-    Ok(())
-}
-
-/// `‹ 2 / 4 ›`, centred in `area`.
-fn pager(
-    pen: &mut Pen<'_>,
-    area: Area,
-    page: usize,
-    pages: usize,
-    hits: &mut Hits,
-) -> AureaResult<()> {
-    let mid = area.x + area.w / 2.0;
-    let text = format!("{} / {pages}", page + 1);
-    pen.centred(&text, area, &pen.bold(12.0), color::DIM)?;
-    let side = area.h;
-    let half = pen.s(44.0);
-    let arrows = [
-        (page.checked_sub(1), mid - half - side, -1.0),
-        (Some(page + 1).filter(|p| *p < pages), mid + half, 1.0),
-    ];
-    for (to, x, dir) in arrows {
-        let a = Area::new(x, area.y, side, side);
-        let Some(to) = to else {
-            continue;
-        };
-        let hit = Hit::EffectPage(to);
-        let t = pen.hover(a, hit);
-        pen.round(a, side / 2.0, color::mix(color::RAISED, color::HOVER, t))?;
-        let (cx, cy, r) = (a.x + side / 2.0, a.y + side / 2.0, pen.s(4.0));
-        pen.polygon(
-            &[
-                (cx - dir * r * 0.6, cy - r),
-                (cx + dir * r * 0.8, cy),
-                (cx - dir * r * 0.6, cy + r),
-            ],
-            color::TEXT,
-        )?;
-        hits.push((a, hit));
+        led_strip(pen, bar, card.plays, strips.time, strips.key_colors)?;
     }
     Ok(())
 }

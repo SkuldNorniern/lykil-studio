@@ -12,7 +12,7 @@ pub enum Key {
     Down(usize),
     TabBar,
     Page,
-    /// A slider drawn by `widgets::slider`, by its hit.
+    /// A slider drawn by `widgets::slider::slider`, by its hit.
     HitKnob(Hit),
 }
 

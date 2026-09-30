@@ -1,6 +1,12 @@
 //! Colour codes and the way back to `Hsv`.
 
+use aurea::render::Color;
 use lykil::lighting::{Hsv, Rgb};
+
+/// An LED colour as the canvas draws it.
+pub fn rgb(c: Rgb) -> Color {
+    Color::rgb(c.r, c.g, c.b)
+}
 
 pub fn hex(c: Rgb) -> String {
     format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b)

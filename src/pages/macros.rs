@@ -3,9 +3,12 @@
 use aurea::AureaResult;
 
 use crate::app::{Hit, Shared};
+use crate::components::surface::{list_row, panel};
+use crate::components::text::{heading, label};
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
-use crate::widgets::{label, pills, text_field};
+use crate::widgets::pills::pills;
+use crate::widgets::text_field::text_field;
 
 pub fn macros_tab(
     pen: &mut Pen<'_>,
@@ -35,7 +38,7 @@ pub fn macros_tab(
         pen.s(300.0),
         body.h - pen.s(8.0),
     );
-    pen.round(list, pen.s(12.0), color::SURFACE)?;
+    panel(pen, list)?;
     macro_list(pen, list, &kb.macros, ui.macro_id, hits)?;
 
     let editor = Area::new(
@@ -44,15 +47,14 @@ pub fn macros_tab(
         body.right() - list.right() - pen.s(20.0),
         pen.s(270.0),
     );
-    pen.round(editor, pen.s(12.0), color::SURFACE)?;
+    panel(pen, editor)?;
     let x = editor.x + pen.s(20.0);
     let id = ui.macro_id;
-    pen.text(
+    heading(
+        pen,
         &lang.fill("Macro {}", &[&format!("M{id}")]),
         x,
         editor.y + pen.s(18.0),
-        &pen.bold(17.0),
-        color::TEXT,
     )?;
     let saved = kb.macros.get(id).cloned().unwrap_or_default();
     let editing = ui.macro_text.is_some();
@@ -68,11 +70,13 @@ pub fn macros_tab(
         editor.w - pen.s(40.0),
         pen.s(110.0),
     );
-    pen.round(field, pen.s(8.0), color::BACKGROUND)?;
-    if editing {
-        pen.outline(field, pen.s(8.0), pen.s(1.5), color::ACCENT)?;
-    }
-    text_field(pen, field, &text, editing)?;
+    text_field(
+        pen,
+        field,
+        &text,
+        editing,
+        lang.tr("Start typing: this macro will type the same text."),
+    )?;
     let steps = lykil_config::text::steps(&text).map_or(0, |s| s.len());
     let full = steps > lykil::macros::MACRO_STEPS;
     let count = lang.fill(
@@ -125,14 +129,7 @@ pub fn macro_list(
         if a.bottom() > list.bottom() {
             break;
         }
-        let active = i == chosen;
-        let t = pen.hover(a, Hit::Macro(i));
-        let bg = if active {
-            color::RAISED
-        } else {
-            color::mix(color::SURFACE, color::RAISED, 0.5 * t)
-        };
-        pen.round(a, pen.s(8.0), bg)?;
+        list_row(pen, a, Hit::Macro(i), i == chosen)?;
         pen.text(
             &format!("M{i}"),
             a.x + pen.s(12.0),
