@@ -738,10 +738,11 @@ fn keymap_tab(
         panel.right() - left.right() - pen.s(44.0),
         panel.h - pen.s(36.0),
     );
+    let holds = |b: Binding| kb.via.is_none_or(|v| v.holds(b));
     palette(
         pen,
         right,
-        &layers,
+        (&layers, &holds),
         current,
         (ui.group, !kb.macros.is_empty()),
         hits,
@@ -1019,65 +1020,20 @@ fn chip(
     }
 }
 
+/// `holds` says which bindings the keyboard can take; the rest are Lykil
+/// only and show dimmed.
 fn palette(
     pen: &mut Pen<'_>,
     area: Area,
-    layers: &[String],
+    (layers, holds): (&[String], &dyn Fn(Binding) -> bool),
     current: Binding,
     (chosen, macros): (usize, bool),
     hits: &mut Hits,
 ) -> AureaResult<()> {
-    let lang = pen.lang;
     let groups = legend::palette(layers, macros);
     let list_w = pen.s(150.0);
-    #[allow(clippy::cast_precision_loss)]
-    let row_h = pen.s(24.0).min(area.h / groups.len().max(1) as f32);
-    let font = pen.font(12.0);
-    for (i, group) in groups.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let a = Area::new(
-            area.x,
-            area.y + row_h * i as f32,
-            list_w,
-            row_h - pen.s(2.0),
-        );
-        if a.bottom() > area.bottom() {
-            break;
-        }
-        let active = i == chosen;
-        let has_current = group.items.contains(&current);
-        let t = pen.hover(a, Hit::Group(i));
-        let bg = if active {
-            color::RAISED
-        } else {
-            color::mix(color::SURFACE, color::RAISED, 0.5 * t)
-        };
-        pen.round(a, pen.s(6.0), bg)?;
-        if active {
-            pen.round(
-                Area::new(a.x, a.y + pen.s(5.0), pen.s(3.0), a.h - pen.s(10.0)),
-                pen.s(1.5),
-                color::ACCENT,
-            )?;
-        }
-        let fg = if active { color::TEXT } else { color::DIM };
-        pen.text(
-            lang.tr(group.name),
-            a.x + pen.s(12.0),
-            a.y + pen.s(5.0),
-            &font,
-            fg,
-        )?;
-        if has_current {
-            pen.circle(
-                a.right() - pen.s(10.0),
-                a.y + a.h / 2.0,
-                pen.s(3.0),
-                color::ACCENT,
-            )?;
-        }
-        hits.push((a, Hit::Group(i)));
-    }
+    let list = Area::new(area.x, area.y, list_w, area.h);
+    group_list(pen, list, (&groups, chosen), current, holds, hits)?;
 
     let Some(group) = groups.get(chosen) else {
         return Ok(());
@@ -1119,9 +1075,79 @@ fn palette(
             sub.as_deref(),
             *b == current,
         )?;
-        hits.push((a, Hit::Palette(*b)));
+        if holds(*b) {
+            hits.push((a, Hit::Palette(*b)));
+        } else {
+            pen.veil(a, color::SURFACE, 0.65)?;
+        }
         x += w + gap;
     }
+    Ok(())
+}
+
+/// The palette's groups down the left, the chosen one marked.
+fn group_list(
+    pen: &mut Pen<'_>,
+    area: Area,
+    (groups, chosen): (&[legend::Group], usize),
+    current: Binding,
+    holds: &dyn Fn(Binding) -> bool,
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    #[allow(clippy::cast_precision_loss)]
+    let row_h = pen.s(24.0).min(area.h / groups.len().max(1) as f32);
+    for (i, group) in groups.iter().enumerate() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = Area::new(
+            area.x,
+            area.y + row_h * i as f32,
+            area.w,
+            row_h - pen.s(2.0),
+        );
+        if a.bottom() > area.bottom() {
+            break;
+        }
+        let active = i == chosen;
+        let has_current = group.items.contains(&current);
+        let t = pen.hover(a, Hit::Group(i));
+        let bg = if active {
+            color::RAISED
+        } else {
+            color::mix(color::SURFACE, color::RAISED, 0.5 * t)
+        };
+        pen.round(a, pen.s(6.0), bg)?;
+        if active {
+            pen.round(
+                Area::new(a.x, a.y + pen.s(5.0), pen.s(3.0), a.h - pen.s(10.0)),
+                pen.s(1.5),
+                color::ACCENT,
+            )?;
+        }
+        let fg = if active { color::TEXT } else { color::DIM };
+        let name = if group.items.iter().any(|b| holds(*b)) {
+            lang.tr(group.name).to_string()
+        } else {
+            lang.fill("{} (Lykil only)", &[lang.tr(group.name)])
+        };
+        pen.fitted_left(
+            &name,
+            Area::new(a.x + pen.s(12.0), a.y, a.w - pen.s(24.0), a.h),
+            12.0,
+            8.0,
+            fg,
+        )?;
+        if has_current {
+            pen.circle(
+                a.right() - pen.s(10.0),
+                a.y + a.h / 2.0,
+                pen.s(3.0),
+                color::ACCENT,
+            )?;
+        }
+        hits.push((a, Hit::Group(i)));
+    }
+
     Ok(())
 }
 

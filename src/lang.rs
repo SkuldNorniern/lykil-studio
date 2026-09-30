@@ -225,6 +225,7 @@ const KO: &[(&str, &str)] = &[
         "Lykil 또는 VIA 키보드를 연결하세요",
     ),
     ("Seen, but no answer:", "보이지만 응답이 없음:"),
+    ("{} (Lykil only)", "{} (Lykil 전용)"),
     (
         "This keyboard's VIA definition has no lighting menu",
         "이 키보드의 VIA 정의에는 조명 메뉴가 없습니다",

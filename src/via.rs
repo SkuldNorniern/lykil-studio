@@ -170,6 +170,18 @@ fn write_macros(macros: &[Vec<Step>]) -> Option<Vec<u8>> {
 pub struct Via {
     pub protocol: u16,
     pub ids: (u16, u16),
+    /// The QMK keycode set it speaks.
+    pub abi: AbiVersion,
+}
+
+impl Via {
+    /// Whether a VIA keycode can hold `binding`.
+    pub fn holds(self, binding: Binding) -> bool {
+        project(self.abi, binding)
+            .value()
+            .and_then(|q| encode(self.abi, &q).ok())
+            .is_some()
+    }
 }
 
 /// Where VIA definitions go: `via` in Studio's data folder.
@@ -290,9 +302,10 @@ pub fn poll(
     canvas: CanvasId,
 ) -> String {
     let ids = device.ids();
-    let via = Some(Via {
+    let mut via = Some(Via {
         protocol: device.protocol(),
         ids,
+        abi: AbiVersion::LATEST,
     });
     let def = match definition(&mut device, via, rx, shared, canvas) {
         Ok(d) => d,
@@ -308,6 +321,9 @@ pub fn poll(
         Ok(l) => l,
         Err(e) => return e.to_string(),
     };
+    if let Some(v) = via.as_mut() {
+        v.abi = abi;
+    }
     // Keyboards without dynamic macros refuse these; that is no macros.
     let mut macros = device
         .macro_count()
