@@ -36,6 +36,9 @@ pub struct Keyboard {
     /// The status of the last change the keyboard refused, for the status
     /// line.
     pub error: Option<String>,
+    /// While searching: raw HID interfaces that are there but did not
+    /// answer, and why.
+    pub seen: Vec<String>,
 }
 
 impl Keyboard {
@@ -95,30 +98,46 @@ pub fn spawn(shared: Arc<Mutex<Shared>>, canvas: CanvasId) -> Sender<Command> {
             } else {
                 open_any()
             };
-            match found {
-                Ok(found) => {
-                    let reason = match found {
-                        Found::Lykil(device) => poll(device, &rx, &shared, canvas),
-                        Found::Via(device) => crate::via::poll(device, &rx, &shared, canvas),
+            if let Ok(found) = found {
+                let reason = match found {
+                    Found::Lykil(device) => poll(device, &rx, &shared, canvas),
+                    Found::Via(device) => crate::via::poll(device, &rx, &shared, canvas),
+                };
+                update(&shared, canvas, |k| {
+                    *k = Keyboard {
+                        connection: Connection::Lost(reason),
+                        ..Keyboard::default()
                     };
-                    update(&shared, canvas, |k| {
-                        *k = Keyboard {
-                            connection: Connection::Lost(reason),
-                            ..Keyboard::default()
-                        };
-                    });
-                }
-                Err(_) => update(&shared, canvas, |k| {
+                });
+            } else {
+                let seen = unanswered();
+                update(&shared, canvas, |k| {
                     if k.connection == Connection::Connected {
                         k.connection = Connection::Searching;
                     }
-                }),
+                    k.seen = seen;
+                });
             }
             while rx.try_recv().is_ok() {}
             thread::sleep(RETRY_EVERY);
         }
     });
     tx
+}
+
+/// Every raw HID interface with the VIA usage and why it did not answer.
+fn unanswered() -> Vec<String> {
+    lykil_device::probe()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| {
+            let why = p.answer.err()?;
+            Some(format!(
+                "{} ({:04x}:{:04x}): {why}",
+                p.name, p.vendor_id, p.product_id
+            ))
+        })
+        .collect()
 }
 
 fn poll(

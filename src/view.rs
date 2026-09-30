@@ -306,16 +306,22 @@ fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard, hits: &mut Hits) -> Aur
     if kb.connection == Connection::NeedsDefinition {
         return needs_definition(pen, body, kb, hits);
     }
+    let seen = &kb.seen[..kb.seen.len().min(3)];
+    let extra = if seen.is_empty() {
+        0.0
+    } else {
+        pen.s(28.0 + 20.0 * f32::from(u8::try_from(seen.len()).unwrap_or(3)))
+    };
     let card = Area::new(
-        body.x + (body.w - pen.s(420.0)) / 2.0,
+        body.x + (body.w - pen.s(460.0)) / 2.0,
         body.y + body.h / 2.0 - pen.s(70.0),
-        pen.s(420.0),
-        pen.s(140.0),
+        pen.s(460.0),
+        pen.s(140.0) + extra,
     );
     pen.round(card, pen.s(14.0), color::SURFACE)?;
     let title = Area::new(card.x, card.y + pen.s(30.0), card.w, pen.s(24.0));
     pen.centred(
-        lang.tr("Plug in a Lykil keyboard"),
+        lang.tr("Plug in a Lykil or VIA keyboard"),
         title,
         &pen.bold(18.0),
         color::TEXT,
@@ -332,7 +338,30 @@ fn waiting(pen: &mut Pen<'_>, body: Area, kb: &Keyboard, hits: &mut Hits) -> Aur
         card.w - pen.s(32.0),
         pen.s(20.0),
     );
-    pen.fitted(&line, sub, 13.0, 9.0, color::DIM)
+    pen.fitted(&line, sub, 13.0, 9.0, color::DIM)?;
+    if seen.is_empty() {
+        return Ok(());
+    }
+    let mut y = sub.bottom() + pen.s(20.0);
+    let head = Area::new(sub.x, y, sub.w, pen.s(16.0));
+    pen.fitted(
+        lang.tr("Seen, but no answer:"),
+        head,
+        11.0,
+        8.0,
+        color::FAINT,
+    )?;
+    for line in seen {
+        y += pen.s(20.0);
+        pen.fitted(
+            line,
+            Area::new(sub.x, y, sub.w, pen.s(16.0)),
+            11.0,
+            8.0,
+            color::DIM,
+        )?;
+    }
+    Ok(())
 }
 
 fn needs_definition(

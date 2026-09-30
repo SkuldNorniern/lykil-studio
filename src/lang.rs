@@ -220,7 +220,11 @@ const KO: &[(&str, &str)] = &[
     ("No keyboard", "키보드 없음"),
     ("up {}   healthy", "가동 {}   정상"),
     ("up {}   {} faults", "가동 {}   오류 {}"),
-    ("Plug in a Lykil keyboard", "Lykil 키보드를 연결하세요"),
+    (
+        "Plug in a Lykil or VIA keyboard",
+        "Lykil 또는 VIA 키보드를 연결하세요",
+    ),
+    ("Seen, but no answer:", "보이지만 응답이 없음:"),
     (
         "Studio finds it on its own. Close VIA if it is open.",
         "Studio가 알아서 찾습니다. VIA가 열려 있다면 닫아 주세요.",
