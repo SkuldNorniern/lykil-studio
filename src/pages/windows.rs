@@ -300,6 +300,63 @@ fn who_lights(d: &crate::lamps::Lamp, sync: bool) -> (&'static str, aurea::rende
 
 /// The picked device's brightness, then every device with its follow
 /// switch.
+/// The picked device's effect: the keyboard's, or its own with effect,
+/// colour and speed. Returns the height it took.
+fn own_effect(
+    pen: &mut Pen<'_>,
+    area: Area,
+    d: &crate::lamps::Lamp,
+    shared: &Shared,
+    hits: &mut Hits,
+) -> AureaResult<f32> {
+    let lang = pen.lang;
+    widgets::label(pen, lang.tr("EFFECT"), area.x, area.y)?;
+    let bar = Area::new(area.x, area.y + pen.s(18.0), area.w, pen.s(30.0));
+    let items = [
+        (lang.tr("The keyboard's"), Hit::DeviceOwn(false)),
+        (lang.tr("Its own"), Hit::DeviceOwn(true)),
+    ];
+    widgets::segmented(
+        pen,
+        bar,
+        (&items, 4000),
+        usize::from(d.place.own.is_some()),
+        hits,
+    )?;
+    let mut y = bar.bottom() + pen.s(12.0);
+    let Some(own) = d.place.own else {
+        return Ok(y - area.y + pen.s(6.0));
+    };
+    let chips: Vec<(String, Hit, bool)> = crate::lamps::OWN_EFFECTS
+        .iter()
+        .map(|e| {
+            let name = lang.tr(crate::pages::lighting::effect_name(*e)).to_string();
+            (name, Hit::DeviceEffect(*e), *e == own.effect)
+        })
+        .collect();
+    y += widgets::chip_flow(pen, Area::new(area.x, y, area.w, area.h), &chips, hits)?;
+    y += pen.s(14.0);
+    widgets::label(pen, lang.tr("COLOUR"), area.x, y)?;
+    let hues = Area::new(area.x, y + pen.s(20.0), area.w, pen.s(12.0));
+    widgets::colour::hue_bar(pen, hues, own.color.h, Hit::DeviceHue, hits)?;
+    y = hues.bottom() + pen.s(14.0);
+    if own.effect != lykil::lighting::Effect::Solid {
+        let row = Area::new(area.x, y, area.w, pen.s(34.0));
+        let speed = f32::from(own.speed) / 255.0;
+        widgets::slider(
+            pen,
+            row,
+            lang.tr("SPEED"),
+            speed,
+            Hit::DeviceSpeed,
+            shared,
+            hits,
+        )?;
+        y += pen.s(46.0);
+    }
+    Ok(y - area.y)
+}
+
 fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<()> {
     let lang = pen.lang;
     let mut y = area.y;
@@ -316,32 +373,25 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
             color::TEXT,
         )?;
         y += pen.s(24.0);
-        widgets::label(pen, lang.tr("BRIGHTNESS"), area.x, y)?;
-        let pct = format!("{}%", u32::from(d.place.level) * 100 / 255);
-        let font = pen.font(11.0);
-        let pw = pen.width(&pct, &font);
-        pen.text(&pct, area.right() - pw, y, &font, color::DIM)?;
-        let track = Area::new(area.x, y + pen.s(18.0), area.w, pen.s(8.0));
-        pen.round(track, track.h / 2.0, color::RAISED)?;
-        let fill = Area::new(
-            track.x,
-            track.y,
-            track.w * f32::from(d.place.level) / 255.0,
-            track.h,
-        );
-        pen.round(fill, track.h / 2.0, color::ACCENT)?;
-        let knob = fill.right();
-        pen.circle(knob, track.y + track.h / 2.0, pen.s(7.0), color::TEXT)?;
-        hits.push((
-            Area::new(
-                track.x,
-                track.y - pen.s(10.0),
-                track.w,
-                track.h + pen.s(20.0),
-            ),
+        let row = Area::new(area.x, y, area.w, pen.s(34.0));
+        let level = f32::from(d.place.level) / 255.0;
+        widgets::slider(
+            pen,
+            row,
+            lang.tr("BRIGHTNESS"),
+            level,
             Hit::DeviceLevel,
-        ));
-        y += pen.s(44.0);
+            shared,
+            hits,
+        )?;
+        y += pen.s(46.0);
+        y += own_effect(
+            pen,
+            Area::new(area.x, y, area.w, area.bottom() - y),
+            d,
+            shared,
+            hits,
+        )?;
         if !shared.lamp_sync {
             pen.fitted_left(
                 lang.tr("Used while Studio lights it."),

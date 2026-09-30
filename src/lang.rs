@@ -226,6 +226,8 @@ const KO: &[(&str, &str)] = &[
     ),
     ("Seen, but no answer:", "보이지만 응답이 없음:"),
     ("{} (Lykil only)", "{} (Lykil 전용)"),
+    ("The keyboard's", "키보드와 같이"),
+    ("Its own", "따로"),
     (
         "This VIA keyboard has no dynamic macros",
         "이 VIA 키보드에는 동적 매크로가 없습니다",
@@ -451,6 +453,17 @@ const KO: &[(&str, &str)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_text_is_in_the_table_once() {
+        let mut seen = std::collections::BTreeSet::new();
+        let twice: Vec<&str> = KO
+            .iter()
+            .map(|(en, _)| *en)
+            .filter(|en| !seen.insert(*en))
+            .collect();
+        assert!(twice.is_empty(), "twice in KO: {twice:?}");
+    }
 
     #[test]
     fn missing_text_stays_english_and_templates_fill() {

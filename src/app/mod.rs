@@ -158,6 +158,11 @@ pub enum Hit {
     ViaToggle(usize, bool),
     ViaHue(usize),
     ViaSat(usize),
+    /// The picked desk device: its own effect or the keyboard's.
+    DeviceOwn(bool),
+    DeviceEffect(Effect),
+    DeviceHue,
+    DeviceSpeed,
 }
 
 /// The tab Ctrl + `key` goes to from `now`: Ctrl+1 to Ctrl+5, and
@@ -486,7 +491,14 @@ impl Shared {
         };
         match hit {
             Hit::Tab(t) => self.switch_tab(t),
-            Hit::LampSync(_) | Hit::DeskDevice(_) | Hit::DeviceLevel | Hit::LampFollow(_) => {
+            Hit::LampSync(_)
+            | Hit::DeskDevice(_)
+            | Hit::DeviceLevel
+            | Hit::LampFollow(_)
+            | Hit::DeviceOwn(_)
+            | Hit::DeviceEffect(_)
+            | Hit::DeviceHue
+            | Hit::DeviceSpeed => {
                 self.click_desk(hit, tx);
             }
             Hit::ViaFolder => crate::reveal(crate::devices::via::folder()),
@@ -599,6 +611,16 @@ impl Shared {
             }
             Hit::ViaHue(i) => self.set_via(i, 0, byte(across).min(254), tx),
             Hit::ViaSat(i) => self.set_via(i, 1, byte(across), tx),
+            Hit::DeviceHue => self.change_own(|own| {
+                if let Some(s) = own {
+                    s.color.h = byte(across).min(254);
+                }
+            }),
+            Hit::DeviceSpeed => self.change_own(|own| {
+                if let Some(s) = own {
+                    s.speed = byte(across);
+                }
+            }),
             Hit::DeviceLevel => {
                 let id = self.ui.desk_selected.clone();
                 if let Some(l) = self.lamps.iter_mut().find(|l| Some(&l.id) == id.as_ref()) {
