@@ -81,8 +81,8 @@ impl Area {
     }
 }
 
-/// A drawing context with the display scale, the mouse position and the
-/// UI's eased values.
+/// A drawing context with the UI zoom, the mouse position and the UI's
+/// eased values.
 pub struct Pen<'a> {
     pub ctx: &'a mut dyn DrawingContext,
     pub scale: f32,
@@ -101,7 +101,7 @@ impl Pen<'_> {
         self.anim.to(Key::Hover(hit), target, rate::HOVER)
     }
 
-    /// Design pixels to canvas pixels.
+    /// Design pixels to canvas pixels, times the zoom (1 for now).
     pub fn s(&self, v: f32) -> f32 {
         v * self.scale
     }

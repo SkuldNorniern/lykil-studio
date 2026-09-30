@@ -236,7 +236,6 @@ pub struct Ui {
     pub confirm_reset: bool,
     pub presses: Presses,
     pub anim: Anim,
-    pub scale: f32,
     pub lang: crate::lang::Lang,
     pub notice: Option<String>,
 }

@@ -19,11 +19,9 @@ const MARGIN: f32 = 24.0;
 pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()> {
     #[allow(clippy::cast_precision_loss)]
     let (w, h) = (ctx.width() as f32, ctx.height() as f32);
-    let scale = if shared.ui.scale > 0.0 {
-        shared.ui.scale
-    } else {
-        1.0
-    };
+    // Aurea's context is in logical pixels and scales for the display
+    // itself; scaling here as well drew everything twice as big on Retina.
+    let scale = 1.0;
     shared.settle();
     shared.follow_presses();
     let mut anim = std::mem::take(&mut shared.ui.anim);
