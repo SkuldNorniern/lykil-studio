@@ -1,12 +1,19 @@
 //! UI state and input, matched against the last frame's hits.
 
-use std::collections::VecDeque;
+mod desk;
+mod keymap;
+mod lighting;
+mod macros;
+mod presses;
+
+pub use presses::Presses;
+
 use std::sync::mpsc::Sender;
 
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
 use lykil::keycode::Modifiers;
-use lykil::lighting::{Effect, Hsv, Palette, RIPPLES, Rgb, Settings};
+use lykil::lighting::{Effect, Hsv, Palette, Rgb, Settings};
 
 use crate::anim::{Anim, Key};
 use crate::colour;
@@ -153,102 +160,6 @@ pub enum Hit {
     ViaSat(usize),
 }
 
-/// Recent key presses, for the reactive and ripple previews.
-#[derive(Debug, Default)]
-pub struct Presses {
-    down: Vec<bool>,
-    /// When each key (by description index) last went down, in
-    /// [`Anim::time`] seconds.
-    pub at: Vec<Option<f32>>,
-    pub recent: VecDeque<(usize, f32)>,
-    /// Heatmap warmth per key, `0..=1`, and when it was last set.
-    heat: Vec<(f32, f32)>,
-    /// For each key, the keys a press warms and by how much, with the
-    /// size it was worked out for.
-    reach: (u8, Vec<Vec<(usize, f32)>>),
-}
-
-/// Heat one press adds, as the firmware's 22000 of 65535.
-const HEAT_PER_PRESS: f32 = 22_000.0 / 65_535.0;
-
-impl Presses {
-    pub fn press(&mut self, key: usize, time: f32) {
-        if self.at.len() <= key {
-            self.at.resize(key + 1, None);
-        }
-        self.at[key] = Some(time);
-        let near = self
-            .reach
-            .1
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| vec![(key, 1.0)]);
-        for (k, share) in near {
-            if self.heat.len() <= k {
-                self.heat.resize(k + 1, (0.0, time));
-            }
-            // Speed only sets how fast heat goes; for adding, any will do.
-            let warm = self.heat_at(k, time, 128);
-            self.heat[k] = ((warm + HEAT_PER_PRESS * share).min(1.0), time);
-        }
-        if self.recent.len() == RIPPLES {
-            self.recent.pop_front();
-        }
-        self.recent.push_back((key, time));
-    }
-
-    /// Works out which keys a press warms, as the firmware does: keys
-    /// within `size / 3 + 1` layout units, less the further they are.
-    pub fn set_reach(&mut self, points: &[Option<lykil::lighting::Point>], size: u8) {
-        if self.reach.0 == size && self.reach.1.len() == points.len() {
-            return;
-        }
-        let reach = f32::from(size / 3 + 1);
-        let near = |from: Option<lykil::lighting::Point>| -> Vec<(usize, f32)> {
-            let Some(a) = from else {
-                return Vec::new();
-            };
-            points
-                .iter()
-                .enumerate()
-                .filter_map(|(k, p)| {
-                    let b = (*p)?;
-                    let dx = f32::from(a.x.abs_diff(b.x));
-                    let dy = f32::from(a.y.abs_diff(b.y));
-                    let d = (dx * dx + dy * dy).sqrt().floor();
-                    (d < reach).then(|| (k, (reach - d) / reach))
-                })
-                .collect()
-        };
-        self.reach = (size, points.iter().map(|p| near(*p)).collect());
-    }
-
-    /// Key `key`'s heat at `time`, cooling as the firmware does: about 10 s
-    /// from hot to cold at speed 128.
-    pub fn heat_at(&self, key: usize, time: f32, speed: u8) -> f32 {
-        let per_second = (f32::from(speed) + 16.0) / 22.0 * 1000.0 / 65_535.0;
-        self.heat
-            .get(key)
-            .map_or(0.0, |(h, at)| (h - (time - at) * per_second).max(0.0))
-    }
-
-    /// Records the keys that went down since the last call; held keys
-    /// stay lit, as on the keyboard.
-    pub fn follow(&mut self, down: &[bool], time: f32) {
-        for (key, &d) in down.iter().enumerate() {
-            if !d {
-                continue;
-            }
-            if self.down.get(key).copied().unwrap_or(false) {
-                self.at[key] = Some(time);
-            } else {
-                self.press(key, time);
-            }
-        }
-        self.down = down.to_vec();
-    }
-}
-
 /// The tab Ctrl + `key` goes to from `now`: Ctrl+1 to Ctrl+5, and
 /// Ctrl+Tab (with Shift, backwards) round the bar.
 fn tab_shortcut(key: KeyCode, shift: bool, now: Tab) -> Option<Tab> {
@@ -351,41 +262,6 @@ impl Shared {
         (self.ui.tab == Tab::Lighting && self.lighting().is_some())
             || (self.ui.tab == Tab::Windows && self.lamp_sync)
             || self.ui.editing.is_some()
-    }
-
-    pub fn brushing(&self) -> bool {
-        self.lighting().is_some_and(|s| s.effect == Effect::PerKey)
-    }
-
-    pub fn editing_second(&self) -> bool {
-        self.ui.second
-            && !self.brushing()
-            && self.lighting().is_some_and(|s| s.palette == Palette::Two)
-    }
-
-    pub fn picked(&self) -> Hsv {
-        let s = self.lighting().unwrap_or_default();
-        if self.brushing() {
-            self.ui.brush.unwrap_or(Hsv::new(s.color.h, s.color.s, 255))
-        } else if self.editing_second() {
-            s.second()
-        } else {
-            s.color
-        }
-    }
-
-    fn pick(&mut self, hsv: Hsv, tx: &Sender<Command>) {
-        if self.brushing() {
-            self.ui.brush = Some(hsv);
-        } else if self.editing_second() {
-            // The second colour shares the brightness.
-            self.change_lighting(tx, |s| {
-                s.color2 = Hsv::new(hsv.h, hsv.s, 255);
-                s.color.v = hsv.v;
-            });
-        } else {
-            self.change_lighting(tx, |s| s.color = hsv);
-        }
     }
 
     pub fn follow_presses(&mut self) {
@@ -507,20 +383,6 @@ impl Shared {
         }
     }
 
-    fn keymap_key(&mut self, key: KeyCode, tx: &Sender<Command>) -> bool {
-        match key {
-            KeyCode::Left => self.step_selection(-1.0, 0.0),
-            KeyCode::Right => self.step_selection(1.0, 0.0),
-            KeyCode::Up => self.step_selection(0.0, -1.0),
-            KeyCode::Down => self.step_selection(0.0, 1.0),
-            KeyCode::Delete => {
-                self.assign(Binding::None, tx, false);
-                true
-            }
-            _ => false,
-        }
-    }
-
     /// The wheel nudges the slider or hue under the mouse, or steps
     /// through tabs and layers.
     fn wheel(&mut self, delta_y: f64, tx: &Sender<Command>) -> bool {
@@ -584,12 +446,6 @@ impl Shared {
         (self.ui.tab == Tab::Lighting).then(|| self.copy_paste(key, tx))
     }
 
-    fn lamp(&self, command: crate::lamps::LampCommand) {
-        if let Some(tx) = &self.lamp_tx {
-            let _ = tx.send(command);
-        }
-    }
-
     fn switch_tab(&mut self, tab: Tab) {
         if self.ui.tab != tab {
             self.ui.anim.set(Key::Page, 0.0);
@@ -611,103 +467,6 @@ impl Shared {
             _ => return false,
         }
         true
-    }
-
-    fn copy_paste(&mut self, key: KeyCode, tx: &Sender<Command>) -> bool {
-        match key {
-            KeyCode::C => {
-                let _ = aurea::set_clipboard_text(&colour::hex(self.picked().to_rgb()));
-                false
-            }
-            KeyCode::V => {
-                if let Some(c) = aurea::clipboard_text().as_deref().and_then(colour::parse) {
-                    self.pick(colour::to_hsv(c), tx);
-                }
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn field_event(&mut self, event: &WindowEvent, tx: &Sender<Command>) -> Option<bool> {
-        let (field, text) = self.ui.editing.as_mut()?;
-        let field = *field;
-        match event {
-            WindowEvent::TextInput { text: typed } => {
-                if std::mem::take(&mut self.ui.fresh) {
-                    text.clear();
-                }
-                for ch in typed.chars().filter(|c| field.takes(*c)) {
-                    if text.len() < field.max_len() {
-                        text.push(ch);
-                    }
-                }
-                Some(true)
-            }
-            WindowEvent::KeyInput {
-                key,
-                pressed: true,
-                modifiers,
-            } => match key {
-                KeyCode::Backspace => {
-                    if std::mem::take(&mut self.ui.fresh) {
-                        text.clear();
-                    } else {
-                        text.pop();
-                    }
-                    Some(true)
-                }
-                KeyCode::V if modifiers.ctrl => {
-                    if let Some(pasted) = aurea::clipboard_text() {
-                        *text = pasted.trim().chars().take(field.max_len()).collect();
-                        self.ui.fresh = false;
-                    }
-                    Some(true)
-                }
-                KeyCode::Enter => {
-                    self.commit(tx);
-                    Some(true)
-                }
-                KeyCode::Tab => {
-                    self.commit(tx);
-                    self.edit(field.next());
-                    Some(true)
-                }
-                KeyCode::Escape => {
-                    self.ui.editing = None;
-                    Some(true)
-                }
-                _ => Some(false),
-            },
-            _ => None,
-        }
-    }
-
-    fn edit(&mut self, field: Field) {
-        let text = field.text(self.picked().to_rgb());
-        self.ui.editing = Some((field, text));
-        self.ui.fresh = true;
-    }
-
-    fn commit(&mut self, tx: &Sender<Command>) {
-        let Some((field, text)) = self.ui.editing.take() else {
-            return;
-        };
-        let current = self.picked().to_rgb();
-        let value = || text.parse::<u8>().ok();
-        let rgb = match field {
-            Field::Hex => colour::parse(&text),
-            Field::Red => value().map(|r| Rgb { r, ..current }),
-            Field::Green => value().map(|g| Rgb { g, ..current }),
-            Field::Blue => value().map(|b| Rgb { b, ..current }),
-        };
-        match rgb {
-            Some(c) if c != current => self.pick(colour::to_hsv(c), tx),
-            Some(_) => {}
-            None => {
-                self.ui.notice = Some(self.ui.lang.fill("not a colour: {}", &[text.as_str()]));
-            }
-        }
     }
 
     fn click(&mut self, tx: &Sender<Command>) {
@@ -797,226 +556,6 @@ impl Shared {
         }
     }
 
-    fn click_lighting(&mut self, hit: Hit, tx: &Sender<Command>) {
-        match hit {
-            Hit::PaintAll => {
-                self.remember_brush();
-                let color = self.picked().to_rgb();
-                self.fill(color, tx);
-            }
-            Hit::ClearAll => self.fill(Rgb::OFF, tx),
-            Hit::Effect(effect) => self.change_lighting(tx, |s| s.effect = effect),
-            Hit::OsLighting(on) => self.change_lighting(tx, |s| s.os_lighting = on),
-            Hit::Colours(p) => self.change_lighting(tx, |s| s.palette = p),
-            Hit::Second(second) => self.ui.second = second,
-            Hit::LayerKeys(on) => self.change_lighting(tx, |s| s.layer_keys = on),
-            Hit::Field(f) => {
-                if self.ui.editing.as_ref().is_none_or(|(e, _)| *e != f) {
-                    self.edit(f);
-                }
-            }
-            Hit::Swatch(c) => self.pick(colour::to_hsv(c), tx),
-            Hit::ViaOption(i, v) => self.set_via(i, 0, v, tx),
-            Hit::ViaToggle(i, on) => self.set_via(i, 0, u8::from(on), tx),
-            Hit::Slider(_)
-            | Hit::Square
-            | Hit::HueBar
-            | Hit::ViaRange(_)
-            | Hit::ViaHue(_)
-            | Hit::ViaSat(_) => {
-                if let Some((area, _)) = self.ui.hits.iter().rev().find(|(_, h)| *h == hit) {
-                    let area = *area;
-                    self.ui.drag = Some((hit, area));
-                    self.drag_to(hit, area, tx);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn right_click(&mut self) {
-        let Some(Hit::Key(k)) = self.ui.hovered() else {
-            return;
-        };
-        if self.ui.tab != Tab::Lighting || !self.brushing() {
-            return;
-        }
-        let own = self
-            .keyboard
-            .description
-            .as_ref()
-            .and_then(|d| d.keys.get(k)?.led)
-            .and_then(|led| self.keyboard.key_colors.get(usize::from(led)).copied());
-        if let Some(c) = own {
-            self.ui.brush = Some(colour::to_hsv(c));
-        }
-    }
-
-    fn step_selection(&mut self, dx: f64, dy: f64) -> bool {
-        let (Some(desc), Some(current)) = (&self.keyboard.description, self.ui.selected) else {
-            return false;
-        };
-        let centre = |i: usize| {
-            desc.keys
-                .get(i)?
-                .geometry
-                .map(|[x, y, w, h]| (x + w / 2.0, y + h / 2.0))
-        };
-        let Some((cx, cy)) = centre(current) else {
-            return false;
-        };
-        // Along the direction counts once, across it counts three times,
-        // so a step stays in its row or column when it can.
-        let next = (0..desc.keys.len())
-            .filter(|&i| i != current)
-            .filter_map(|i| {
-                let (x, y) = centre(i)?;
-                let along = (x - cx) * dx + (y - cy) * dy;
-                let across = ((x - cx) * dy).abs() + ((y - cy) * dx).abs();
-                (along > 0.1).then_some((i, along + 3.0 * across))
-            })
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(i, _)| i);
-        match next {
-            Some(i) => {
-                self.ui.selected = Some(i);
-                true
-            }
-            None => false,
-        }
-    }
-
-    pub fn selected_binding(&self) -> Option<Binding> {
-        self.keyboard
-            .keymap
-            .get(usize::from(self.ui.layer))?
-            .get(self.ui.selected?)
-            .copied()
-    }
-
-    /// Puts `binding` on the selected key; `advance` moves on to the next
-    /// key.
-    fn assign(&mut self, binding: Binding, tx: &Sender<Command>, advance: bool) {
-        let Some(key) = self.ui.selected else {
-            return;
-        };
-        let layer = self.ui.layer;
-        let (Ok(position), Some(slot)) = (
-            u16::try_from(key),
-            self.keyboard
-                .keymap
-                .get_mut(usize::from(layer))
-                .and_then(|l| l.get_mut(key)),
-        ) else {
-            return;
-        };
-        *slot = binding;
-        let _ = tx.send(Command::SetBinding {
-            layer,
-            key: position,
-            binding,
-        });
-        if advance {
-            let keys = self
-                .keyboard
-                .description
-                .as_ref()
-                .map_or(0, |d| d.keys.len());
-            self.ui.selected = (key + 1 < keys).then_some(key + 1);
-        }
-    }
-
-    /// The text being edited for the shown macro, starting from what the
-    /// macro types now.
-    pub fn macro_text(&mut self) -> &mut String {
-        let id = self.ui.macro_id;
-        let current = self
-            .keyboard
-            .macros
-            .get(id)
-            .and_then(|s| lykil_config::text::text(s))
-            .unwrap_or_default();
-        self.ui.macro_text.get_or_insert(current)
-    }
-
-    fn send_macro(&mut self, steps: Vec<lykil::macros::Step>, tx: &Sender<Command>) {
-        let id = self.ui.macro_id;
-        if steps.len() > lykil::macros::MACRO_STEPS {
-            self.ui.notice = Some(self.ui.lang.fill(
-                "too long: {} steps, a macro holds {}",
-                &[
-                    &steps.len().to_string(),
-                    &lykil::macros::MACRO_STEPS.to_string(),
-                ],
-            ));
-            return;
-        }
-        if let Some(slot) = self.keyboard.macros.get_mut(id) {
-            slot.clone_from(&steps);
-        }
-        let _ = tx.send(Command::SetMacro {
-            id: u8::try_from(id).unwrap_or(0),
-            steps,
-        });
-    }
-
-    /// Sets byte `at` of VIA setting `i` here and on the keyboard.
-    fn set_via(&mut self, i: usize, at: usize, byte: u8, tx: &Sender<Command>) {
-        let Some(s) = self.keyboard.via_settings.get_mut(i) else {
-            return;
-        };
-        if s.value.len() <= at {
-            s.value.resize(at + 1, 0);
-        }
-        if s.value[at] == byte {
-            return;
-        }
-        s.value[at] = byte;
-        let _ = tx.send(Command::SetVia {
-            setting: i,
-            value: s.value.clone(),
-        });
-    }
-
-    fn remember_brush(&mut self) {
-        let c = self.picked().to_rgb();
-        self.ui.recent.retain(|r| *r != c);
-        self.ui.recent.insert(0, c);
-        self.ui.recent.truncate(RECENT);
-    }
-
-    fn fill(&mut self, color: Rgb, tx: &Sender<Command>) {
-        let count = self.keyboard.key_colors.len();
-        self.keyboard.key_colors = vec![color; count];
-        let _ = tx.send(Command::SetKeyColors {
-            start: 0,
-            colors: vec![color; count],
-        });
-    }
-
-    fn paint(&mut self, k: usize, tx: &Sender<Command>) {
-        let color = self.picked().to_rgb();
-        let Some(led) = self
-            .keyboard
-            .description
-            .as_ref()
-            .and_then(|d| d.keys.get(k)?.led)
-        else {
-            return;
-        };
-        let Some(slot) = self.keyboard.key_colors.get_mut(usize::from(led)) else {
-            return;
-        };
-        if *slot == color {
-            return;
-        }
-        *slot = color;
-        let _ = tx.send(Command::SetKeyColors {
-            start: led,
-            colors: vec![color],
-        });
-    }
-
     fn drag_to(&mut self, hit: Hit, area: Area, tx: &Sender<Command>) {
         let across = ((self.ui.mouse.0 - area.x) / area.w).clamp(0.0, 1.0);
         let down = ((self.ui.mouse.1 - area.y) / area.h).clamp(0.0, 1.0);
@@ -1071,124 +610,12 @@ impl Shared {
             _ => {}
         }
     }
-
-    /// A click on the Windows page's desk and device list.
-    fn click_desk(&mut self, hit: Hit, tx: &Sender<Command>) {
-        match hit {
-            Hit::LampSync(on) => {
-                self.lamp_sync = on;
-                self.lamp(crate::lamps::LampCommand::Sync(on));
-            }
-            Hit::DeskDevice(i) => {
-                if let Some(l) = self.lamps.get(i) {
-                    let area = self
-                        .ui
-                        .hits
-                        .iter()
-                        .rev()
-                        .find(|(_, h)| *h == hit)
-                        .map(|(a, _)| *a);
-                    if let Some(a) = area {
-                        let scale = a.w / l.size.0.max(1e-3);
-                        self.ui.desk_grab = Some(DeskGrab {
-                            id: l.id.clone(),
-                            from: (l.place.x, l.place.y),
-                            mouse: self.ui.mouse,
-                            scale,
-                        });
-                        self.ui.drag = Some((hit, a));
-                    }
-                    self.ui.desk_selected = Some(l.id.clone());
-                }
-            }
-            Hit::DeviceLevel => {
-                if let Some((area, _)) = self.ui.hits.iter().rev().find(|(_, h)| *h == hit) {
-                    let area = *area;
-                    self.ui.drag = Some((hit, area));
-                    self.drag_to(hit, area, tx);
-                }
-            }
-            Hit::LampFollow(i) => {
-                if let Some(l) = self.lamps.get_mut(i) {
-                    l.place.follow = !l.place.follow;
-                    let command = crate::lamps::LampCommand::Follow(l.id.clone(), l.place.follow);
-                    self.lamp(command);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Slides a dropped device off any it overlaps.
-    fn drop_device(&mut self, id: &str) {
-        let Some(moving) = self.lamps.iter().find(|l| l.id == id) else {
-            return;
-        };
-        let others: Vec<_> = self
-            .lamps
-            .iter()
-            .filter(|l| l.id != id)
-            .map(|l| (l.place, l.size))
-            .collect();
-        let spot = crate::desk::free_spot((moving.place, moving.size), &others);
-        if spot != moving.place {
-            if let Some(l) = self.lamps.iter_mut().find(|l| l.id == id) {
-                l.place = spot;
-            }
-            self.lamp(crate::lamps::LampCommand::Place(
-                id.to_string(),
-                spot.x,
-                spot.y,
-            ));
-        }
-    }
-
-    /// Follows the mouse with the grabbed desk device.
-    fn move_device(&mut self, i: usize) {
-        let Some(DeskGrab {
-            id,
-            from: (x0, y0),
-            mouse: (mx, my),
-            scale,
-        }) = self.ui.desk_grab.clone()
-        else {
-            return;
-        };
-        let (x, y) = (
-            x0 + (self.ui.mouse.0 - mx) / scale,
-            y0 + (self.ui.mouse.1 - my) / scale,
-        );
-        if let Some(l) = self.lamps.get_mut(i).filter(|l| l.id == id) {
-            l.place.x = x;
-            l.place.y = y;
-        }
-        self.lamp(crate::lamps::LampCommand::Place(id, x, y));
-    }
-
-    fn change_lighting(&mut self, tx: &Sender<Command>, change: impl FnOnce(&mut Settings)) {
-        let Some(mut s) = self.lighting() else {
-            return;
-        };
-        change(&mut s);
-        if Some(s) == self.lighting() {
-            return;
-        }
-        self.ui.draft = Some(s);
-        let _ = tx.send(Command::SetLighting(s));
-    }
-
-    pub fn settle(&mut self) {
-        let confirmed = self.ui.draft == self.keyboard.lighting.map(|l| l.settings);
-        // A refused change shows what the keyboard kept, not the draft.
-        let refused = self.keyboard.error.is_some();
-        if self.ui.drag.is_none() && self.ui.draft.is_some() && (confirmed || refused) {
-            self.ui.draft = None;
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use lykil::lighting::RIPPLES;
+
     use super::*;
 
     #[test]
