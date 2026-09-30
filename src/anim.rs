@@ -13,6 +13,8 @@ pub enum Key {
     TabBar,
     Page,
     Knob(Slider),
+    /// A VIA setting's slider, by its hit.
+    ViaKnob(Hit),
 }
 
 pub mod rate {

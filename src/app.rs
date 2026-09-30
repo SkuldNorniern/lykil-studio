@@ -145,6 +145,12 @@ pub enum Hit {
     DeviceLevel,
     Second(bool),
     LayerKeys(bool),
+    /// VIA settings, by their place in `Keyboard::via_settings`.
+    ViaRange(usize),
+    ViaOption(usize, u8),
+    ViaToggle(usize, bool),
+    ViaHue(usize),
+    ViaSat(usize),
 }
 
 /// Recent key presses, for the reactive and ripple previews.
@@ -810,7 +816,14 @@ impl Shared {
                 }
             }
             Hit::Swatch(c) => self.pick(colour::to_hsv(c), tx),
-            Hit::Slider(_) | Hit::Square | Hit::HueBar => {
+            Hit::ViaOption(i, v) => self.set_via(i, 0, v, tx),
+            Hit::ViaToggle(i, on) => self.set_via(i, 0, u8::from(on), tx),
+            Hit::Slider(_)
+            | Hit::Square
+            | Hit::HueBar
+            | Hit::ViaRange(_)
+            | Hit::ViaHue(_)
+            | Hit::ViaSat(_) => {
                 if let Some((area, _)) = self.ui.hits.iter().rev().find(|(_, h)| *h == hit) {
                     let area = *area;
                     self.ui.drag = Some((hit, area));
@@ -947,6 +960,24 @@ impl Shared {
         });
     }
 
+    /// Sets byte `at` of VIA setting `i` here and on the keyboard.
+    fn set_via(&mut self, i: usize, at: usize, byte: u8, tx: &Sender<Command>) {
+        let Some(s) = self.keyboard.via_settings.get_mut(i) else {
+            return;
+        };
+        if s.value.len() <= at {
+            s.value.resize(at + 1, 0);
+        }
+        if s.value[at] == byte {
+            return;
+        }
+        s.value[at] = byte;
+        let _ = tx.send(Command::SetVia {
+            setting: i,
+            value: s.value.clone(),
+        });
+    }
+
     fn remember_brush(&mut self) {
         let c = self.picked().to_rgb();
         self.ui.recent.retain(|r| *r != c);
@@ -1012,6 +1043,23 @@ impl Shared {
                 self.pick(c, tx);
             }
             Hit::DeskDevice(i) => self.move_device(i),
+            Hit::ViaRange(i) => {
+                let span = self
+                    .keyboard
+                    .via_settings
+                    .get(i)
+                    .map(|s| match s.control.kind {
+                        lykil_qmk::import::ViaControlKind::Range { min, max } => (min, max),
+                        _ => (0, 255),
+                    });
+                if let Some((min, max)) = span {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let v = min + (across * f32::from(max.saturating_sub(min))).round() as u8;
+                    self.set_via(i, 0, v, tx);
+                }
+            }
+            Hit::ViaHue(i) => self.set_via(i, 0, byte(across).min(254), tx),
+            Hit::ViaSat(i) => self.set_via(i, 1, byte(across), tx),
             Hit::DeviceLevel => {
                 let id = self.ui.desk_selected.clone();
                 if let Some(l) = self.lamps.iter_mut().find(|l| Some(&l.id) == id.as_ref()) {

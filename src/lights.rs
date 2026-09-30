@@ -649,20 +649,31 @@ fn square_and_bar(pen: &mut Pen<'_>, square: Area, c: Hsv, hits: &mut Hits) -> A
         square.w,
         pen.s(14.0),
     );
+    hue_bar(pen, bar, c.h, Hit::HueBar, hits)
+}
+
+/// The rainbow bar with a ring at `hue`; dragging it is `hit`.
+pub fn hue_bar(
+    pen: &mut Pen<'_>,
+    bar: Area,
+    hue: u8,
+    hit: Hit,
+    hits: &mut Hits,
+) -> AureaResult<()> {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let bar_px = (bar.w.round() as u32, bar.h.round().max(1.0) as u32);
     cached(pen, &HUES, bar_px, bar, || hue_image(bar_px.0, bar_px.1))?;
-    let hx = bar.x + bar.w * f32::from(c.h) / 254.0;
+    let hx = bar.x + bar.w * f32::from(hue.min(254)) / 254.0;
     ring(
         pen,
         hx,
         bar.y + bar.h / 2.0,
         pen.s(8.0),
-        rgb(Hsv::new(c.h, 255, 255).to_rgb()),
+        rgb(Hsv::new(hue, 255, 255).to_rgb()),
     )?;
     hits.push((
         Area::new(bar.x, bar.y - pen.s(6.0), bar.w, bar.h + pen.s(12.0)),
-        Hit::HueBar,
+        hit,
     ));
     Ok(())
 }
@@ -881,7 +892,7 @@ fn side_card(
 
 /// Options side by side in one bar; the chosen one's background slides.
 /// `id` tells the bars apart for the slide.
-fn segmented(
+pub fn segmented(
     pen: &mut Pen<'_>,
     a: Area,
     (items, id): (&[(&str, Hit)], usize),

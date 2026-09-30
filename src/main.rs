@@ -13,6 +13,7 @@ mod lang;
 mod legend;
 mod lights;
 mod via;
+mod via_lights;
 mod view;
 mod windows;
 

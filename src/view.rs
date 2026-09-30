@@ -66,6 +66,9 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         match shared.ui.tab {
             Tab::Keymap => keymap_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Macros => macros_tab(&mut pen, body, shared, &mut hits)?,
+            Tab::Lighting if shared.keyboard.via.is_some() => {
+                crate::via_lights::tab(&mut pen, body, shared, &mut hits)?
+            }
             Tab::Lighting => lights::tab(&mut pen, body, shared, &mut hits)?,
             Tab::Device => device_tab(&mut pen, body, shared, &mut hits)?,
             Tab::Windows => String::new(),

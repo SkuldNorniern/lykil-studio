@@ -226,6 +226,14 @@ const KO: &[(&str, &str)] = &[
     ),
     ("Seen, but no answer:", "보이지만 응답이 없음:"),
     (
+        "This keyboard's VIA definition has no lighting menu",
+        "이 키보드의 VIA 정의에는 조명 메뉴가 없습니다",
+    ),
+    (
+        "VIA settings from the keyboard's definition. Saved on the keyboard when you let go.",
+        "키보드 정의에서 가져온 VIA 설정입니다. 손을 떼면 키보드에 저장됩니다.",
+    ),
+    (
         "Studio finds it on its own. Close VIA if it is open.",
         "Studio가 알아서 찾습니다. VIA가 열려 있다면 닫아 주세요.",
     ),
