@@ -32,7 +32,6 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         1.0
     };
     shared.settle();
-    shared.settle_leave();
     shared.follow_presses();
     let mut anim = std::mem::take(&mut shared.ui.anim);
     anim.frame();
@@ -94,31 +93,8 @@ pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()
         shared.ui.notice.as_deref(),
         &status,
     )?;
-    shared.ui.frame = shared.ui.frame.wrapping_add(1);
-    repaint_everything(&mut pen, w, h, shared.ui.frame)?;
     shared.ui.hits = hits;
     shared.ui.anim = anim;
-    Ok(())
-}
-
-/// Aurea's CPU renderer (git `4a5a7f8`) repaints only tiles whose items
-/// changed, but clips spanning draws to the rectangle around them, so a
-/// clean tile inside that rectangle loses its items (keys vanish after a
-/// click). One invisible pixel per tile that changes every frame makes
-/// every tile repaint. Goes away with the renderer fix.
-fn repaint_everything(pen: &mut Pen<'_>, w: f32, h: f32, frame: u32) -> AureaResult<()> {
-    const TILE: f32 = 128.0;
-    #[allow(clippy::cast_possible_truncation)]
-    let marker = Color::rgba((frame & 0xFF) as u8, 0, 0, 0);
-    let mut y = 0.0;
-    while y < h {
-        let mut x = 0.0;
-        while x < w {
-            pen.fill(Area::new(x, y, 1.0, 1.0), marker)?;
-            x += TILE;
-        }
-        y += TILE;
-    }
     Ok(())
 }
 

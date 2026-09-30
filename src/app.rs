@@ -2,7 +2,6 @@
 
 use std::collections::VecDeque;
 use std::sync::mpsc::Sender;
-use std::time::{Duration, Instant};
 
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
@@ -272,9 +271,6 @@ pub const SWATCHES: [Rgb; 8] = [
     Rgb::new(255, 255, 255),
 ];
 
-/// How long a leave waits for an enter before it counts.
-const LEAVE: Duration = Duration::from_millis(60);
-
 const RECENT: usize = 8;
 
 /// A desk device being moved: where it and the mouse were when the drag
@@ -319,11 +315,8 @@ pub struct Ui {
     pub presses: Presses,
     pub anim: Anim,
     pub scale: f32,
-    /// Frames drawn, for [`crate::view`]'s repaint workaround.
-    pub frame: u32,
     pub lang: crate::lang::Lang,
     pub notice: Option<String>,
-    left: Option<Instant>,
 }
 
 impl Ui {
@@ -352,16 +345,6 @@ impl Shared {
         (self.ui.tab == Tab::Lighting && self.lighting().is_some())
             || (self.ui.tab == Tab::Windows && self.lamp_sync)
             || self.ui.editing.is_some()
-            || self.ui.left.is_some()
-    }
-
-    /// Takes a leave that no enter followed: the mouse is really gone.
-    pub fn settle_leave(&mut self) {
-        if self.ui.left.is_some_and(|t| t.elapsed() >= LEAVE) {
-            self.ui.left = None;
-            self.ui.mouse = (-1.0, -1.0);
-            self.ui.painting = false;
-        }
     }
 
     pub fn brushing(&self) -> bool {
@@ -432,8 +415,11 @@ impl Shared {
             return redraw;
         }
         match *event {
-            WindowEvent::MouseMove { x, y } => {
-                self.ui.left = None;
+            WindowEvent::MouseMove { x, y, buttons, .. } => {
+                // A release that went missing: the drag is over.
+                if buttons.is_empty() && (self.ui.drag.is_some() || self.ui.painting) {
+                    self.mouse_button(MouseButton::Left, false, tx);
+                }
                 #[allow(clippy::cast_possible_truncation)]
                 let now = (x as f32, y as f32);
                 let before = self.ui.hovered();
@@ -498,17 +484,12 @@ impl Shared {
                 self.macro_text().push_str(&typable);
                 !typable.is_empty()
             }
-            // Aurea (git `4a5a7f8`) on Windows reports a leave and an enter
-            // around nearly every move over the canvas, so a leave only
-            // counts once no enter follows ([`Shared::settle_leave`]). A
-            // drag ends on the button release.
+            // Aurea holds the leave while a button is down, so a drag ends
+            // on its release, not here.
             WindowEvent::MouseExited => {
-                self.ui.left = Some(Instant::now());
-                false
-            }
-            WindowEvent::MouseEntered => {
-                self.ui.left = None;
-                false
+                self.ui.mouse = (-1.0, -1.0);
+                self.ui.painting = false;
+                true
             }
             WindowEvent::MouseWheel { delta_y, .. } => self.wheel(delta_y, tx),
             WindowEvent::KeyInput {

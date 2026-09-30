@@ -108,11 +108,8 @@ fn run() -> aurea::AureaResult<()> {
     });
 
     // Frames come only while something moves: eased values every frame,
-    // the lighting preview every other one. Off Windows, Aurea (git
-    // `4a5a7f8`) hands input over only when a frame runs, so an idle UI
-    // still asks for an empty one.
+    // the lighting preview every other one.
     let ticking = Arc::clone(&shared);
-    let proxy = window.proxy();
     thread::spawn(move || {
         let mut odd = false;
         loop {
@@ -123,8 +120,6 @@ fn run() -> aurea::AureaResult<()> {
             drop(s);
             if moving {
                 request_canvas_redraw(id);
-            } else if cfg!(not(windows)) {
-                let _ = proxy.dispatch(|_| {});
             }
         }
     });
