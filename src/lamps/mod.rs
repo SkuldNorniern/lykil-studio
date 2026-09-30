@@ -34,6 +34,16 @@ pub struct Lamp {
     pub lamps: Vec<(f32, f32)>,
 }
 
+/// Effects a device can run on its own: none of them need key presses.
+pub const OWN_EFFECTS: [Effect; 6] = [
+    Effect::Solid,
+    Effect::Breathing,
+    Effect::Cycle,
+    Effect::Wave,
+    Effect::Starlight,
+    Effect::Rain,
+];
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum LampCommand {
     Sync(bool),
@@ -41,6 +51,8 @@ pub enum LampCommand {
     /// Moves a device on the desk, in metres.
     Place(String, f32, f32),
     Level(String, u8),
+    /// A device's own effect, or `None` to show the keyboard's.
+    Own(String, Option<Settings>),
 }
 
 #[cfg(windows)]
@@ -84,7 +96,7 @@ fn run(shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
         if sync && let Some(settings) = settings {
             #[allow(clippy::cast_possible_truncation)]
             let now = Tick(start.elapsed().as_millis() as u32);
-            devices.show(|at| colour(settings, at, now));
+            devices.show(|own, at| colour(own.unwrap_or(settings), at, now));
         }
         thread::sleep(if sync { FRAME } else { RESCAN / 6 });
     }
@@ -125,7 +137,10 @@ pub fn colours(lamps: &[Lamp], settings: Settings, now: Tick) -> Vec<Vec<Rgb>> {
         .map(|l| {
             l.lamps
                 .iter()
-                .map(|at| colour(settings, frame.point(l.place, *at), now).scale(l.place.level))
+                .map(|at| {
+                    let s = l.place.own.unwrap_or(settings);
+                    colour(s, frame.point(l.place, *at), now).scale(l.place.level)
+                })
                 .collect()
         })
         .collect()
@@ -133,7 +148,7 @@ pub fn colours(lamps: &[Lamp], settings: Settings, now: Tick) -> Vec<Vec<Rgb>> {
 
 #[cfg(windows)]
 mod os {
-    use lykil::lighting::{Point, Rgb};
+    use lykil::lighting::{Point, Rgb, Settings};
     use windows::Devices::Enumeration::DeviceInformation;
     use windows::Devices::Lights::{LampArray, LampArrayKind};
     use windows::UI::Color;
@@ -291,7 +306,8 @@ mod os {
             let id = match command {
                 LampCommand::Follow(id, _)
                 | LampCommand::Place(id, ..)
-                | LampCommand::Level(id, _) => id.clone(),
+                | LampCommand::Level(id, _)
+                | LampCommand::Own(id, _) => id.clone(),
                 LampCommand::Sync(_) => return,
             };
             let mut place = self.desk.get(&id).unwrap_or_default();
@@ -299,6 +315,7 @@ mod os {
                 LampCommand::Follow(_, on) => place.follow = *on,
                 LampCommand::Place(_, x, y) => (place.x, place.y) = (*x, *y),
                 LampCommand::Level(_, level) => place.level = *level,
+                LampCommand::Own(_, own) => place.own = *own,
                 LampCommand::Sync(_) => {}
             }
             self.desk.set(&id, place);
@@ -356,8 +373,9 @@ mod os {
             out
         }
 
-        /// Lights every followed device, in desk space.
-        pub fn show(&self, colour: impl Fn(Point) -> Rgb) {
+        /// Lights every followed device, in desk space, with its own
+        /// effect if it has one.
+        pub fn show(&self, colour: impl Fn(Option<Settings>, Point) -> Rgb) {
             let followed = |d: &&Device| self.desk.get(&d.id).is_some_and(|p| p.follow);
             let frame = Frame::around(
                 self.open
@@ -369,7 +387,7 @@ mod os {
                 let Some(place) = self.desk.get(&d.id) else {
                     continue;
                 };
-                d.show(|at| colour(frame.point(place, at)).scale(place.level));
+                d.show(|at| colour(place.own, frame.point(place, at)).scale(place.level));
             }
         }
     }

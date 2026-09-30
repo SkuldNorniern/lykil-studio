@@ -5,15 +5,18 @@ use std::collections::BTreeMap;
 #[cfg(windows)]
 use std::path::PathBuf;
 
-use lykil::lighting::Point;
+use lykil::lighting::{Point, Settings};
 
-/// A device on the desk: its top left in metres, and its brightness.
+/// A device on the desk: its top left in metres, its brightness, and the
+/// effect it shows.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Place {
     pub x: f32,
     pub y: f32,
     pub level: u8,
     pub follow: bool,
+    /// Its own effect; `None` shows the keyboard's.
+    pub own: Option<Settings>,
 }
 
 impl Default for Place {
@@ -23,6 +26,7 @@ impl Default for Place {
             y: 0.0,
             level: 255,
             follow: false,
+            own: None,
         }
     }
 }
@@ -57,17 +61,20 @@ impl Desk {
         let _ = std::fs::write(path, self.text());
     }
 
-    /// One device per line: `x y level follow id`, tab separated.
+    /// One device per line: `x y level follow s:own id`, tab separated.
+    /// `own` is the effect's bytes in hex, or `-`.
     fn text(&self) -> String {
         use std::fmt::Write as _;
         self.places.iter().fold(String::new(), |mut out, (id, p)| {
             let _ = writeln!(
                 out,
-                "{:.3}\t{:.3}\t{}\t{}\t{id}",
+                "{:.3}\t{:.3}\t{}\t{}\ts:{}\t{id}",
                 p.x,
                 p.y,
                 p.level,
-                u8::from(p.follow)
+                u8::from(p.follow),
+                p.own
+                    .map_or_else(|| "-".to_string(), |s| hex(&s.to_bytes())),
             );
             out
         })
@@ -78,13 +85,21 @@ impl Desk {
             .lines()
             .filter_map(|line| {
                 let mut f = line.splitn(5, '\t');
-                let place = Place {
+                let mut place = Place {
                     x: f.next()?.parse().ok()?,
                     y: f.next()?.parse().ok()?,
                     level: f.next()?.parse().ok()?,
                     follow: f.next()? == "1",
+                    own: None,
                 };
-                Some((f.next()?.to_string(), place))
+                let mut id = f.next()?;
+                // Files from before own effects have the id here.
+                if let Some(rest) = id.strip_prefix("s:") {
+                    let (own, after) = rest.split_once('\t')?;
+                    place.own = unhex(own).and_then(|b| Settings::from_bytes(&b));
+                    id = after;
+                }
+                Some((id.to_string(), place))
             })
             .collect();
         Self { places }
@@ -111,6 +126,21 @@ impl Desk {
         self.set(id, p);
         p
     }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut out, b| {
+        let _ = write!(out, "{b:02x}");
+        out
+    })
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
+        .collect()
 }
 
 /// How much of the smaller of two devices may lie under the other: a
@@ -220,9 +250,27 @@ mod tests {
                 y: -0.25,
                 level: 128,
                 follow: true,
+                own: None,
             },
         );
         assert_eq!(Desk::parse(&d.text()).get("a\tb"), d.get("a\tb"));
+        let own = Settings {
+            speed: 90,
+            ..Settings::DEFAULT
+        };
+        d.set(
+            "c",
+            Place {
+                own: Some(own),
+                ..Place::default()
+            },
+        );
+        let back = Desk::parse(&d.text());
+        assert_eq!(back.get("c").and_then(|p| p.own), Some(own));
+        assert_eq!(back.get("a\tb"), d.get("a\tb"));
+        // A line from before own effects.
+        let old = Desk::parse("0.100\t0.200\t50\t1\tdev");
+        assert_eq!(old.get("dev").map(|p| (p.level, p.own)), Some((50, None)));
     }
 
     #[test]
