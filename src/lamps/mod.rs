@@ -332,10 +332,10 @@ mod os {
             self.skip = ids.map(|(v, p)| format!("VID_{v:04X}&PID_{p:04X}"));
         }
 
-        fn shown(&self, d: &Device) -> bool {
+        fn shown(&self, id: &str) -> bool {
             self.skip
                 .as_ref()
-                .is_none_or(|s| !d.id.to_uppercase().contains(s.as_str()))
+                .is_none_or(|s| !id.to_uppercase().contains(s.as_str()))
         }
 
         pub fn views(&mut self) -> Vec<Lamp> {
@@ -344,7 +344,7 @@ mod os {
             for (id, name, kind, available, open, size, lamps) in self
                 .open
                 .iter()
-                .filter(|d| self.shown(d))
+                .filter(|d| self.shown(&d.id))
                 .map(|d| {
                     let kind = d.array.LampArrayKind().unwrap_or_default();
                     (
@@ -357,7 +357,7 @@ mod os {
                         d.lamps.clone(),
                     )
                 })
-                .chain(self.opening.iter().map(|o| {
+                .chain(self.opening.iter().filter(|o| self.shown(&o.id)).map(|o| {
                     (
                         o.id.clone(),
                         o.name.clone(),
@@ -394,7 +394,7 @@ mod os {
         /// effect if it has one.
         pub fn show(&self, colour: impl Fn(Option<Settings>, Point) -> Rgb) {
             let followed =
-                |d: &&Device| self.shown(d) && self.desk.get(&d.id).is_some_and(|p| p.follow);
+                |d: &&Device| self.shown(&d.id) && self.desk.get(&d.id).is_some_and(|p| p.follow);
             let frame = Frame::around(
                 self.open
                     .iter()
