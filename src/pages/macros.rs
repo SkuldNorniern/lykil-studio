@@ -18,7 +18,11 @@ pub fn macros_tab(
     let ui = &shared.ui;
     if kb.macros.is_empty() {
         pen.centred(
-            lang.tr("This keyboard's firmware has no macros yet"),
+            if kb.via.is_some() {
+                lang.tr("This VIA keyboard has no dynamic macros")
+            } else {
+                lang.tr("This keyboard's firmware has no macros yet")
+            },
             body,
             &pen.font(15.0),
             color::DIM,

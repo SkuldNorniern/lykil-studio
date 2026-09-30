@@ -22,7 +22,10 @@ pages (Ctrl+1 to Ctrl+5, Ctrl+Tab, or the mouse wheel over the tabs):
 
 VIA keyboards do not describe themselves, so Studio needs the keyboard's VIA definition: the JSON VIA's Design tab loads. put it in the `via` folder of Studio's data folder: `%APPDATA%\Lykil Studio` on Windows, `~/Library/Application Support/Lykil Studio` on macOS, `~/.config/Lykil Studio` on Linux (the page shows the folder and a button to open it). Studio matches it by USB vendor and product id, else by vendor id and name (so a wireless dongle, `EVO80 2.4G`, takes the `EVO80` definition), and picks it up by itself.
 
-then the keymap page works as usual, over VIA: keycodes are read and written as QMK keycodes and translated with `lykil-qmk`. a binding VIA has no keycode for is refused. lighting and macros stay lykil only.
+then the keymap page works as usual, over VIA: keycodes are read and written as QMK keycodes and translated with `lykil-qmk`. palette entries VIA has no keycode for are dimmed, and a group with none is marked Lykil only.
+
+- macros: the keyboard's dynamic macros, in QMK's `send_string` bytes. same editor as for lykil keyboards; the limit is the keyboard's macro buffer
+- lighting: the settings the definition's `menus` offer (VIA's built-in `qmk_rgb_matrix`, `qmk_rgblight` and the rest, or the keyboard's own), one card per section: sliders, effect list, colour, on/off. each channel is saved to the keyboard's EEPROM once you let go. `showIf` is not read yet, so every setting shows
 
 `lykil device via-json` writes such a definition for a lykil keyboard, for VIA itself. `LYKIL_STUDIO_VIA=1` makes Studio talk VIA to a keyboard that speaks LCP too, to try this path.
 
@@ -32,6 +35,13 @@ english and korean: follows the system language, `LYKIL_LANG=ko` or `en` overrid
 
 close VIA while Studio runs: every program with the raw HID interface open gets every answer.
 
-the whole window is one canvas: `view.rs` draws it and records where every control is, `app.rs` handles the mouse against that, `device.rs` and `via.rs` talk to the keyboard on their own thread. `anim.rs` eases hover, tab and page changes.
+the whole window is one canvas. how it is split:
+
+- `view.rs`: the frame (header, tabs, footer) and which page to draw. it records where every control is
+- `pages/`: one file per page. `widgets/`: controls more than one page uses (sliders, chips, segmented bars, the colour square and hue bar). `keyboard.rs`: any keyed device drawn from its description
+- `app/`: state and input, matched against the recorded controls, one file per page
+- `devices/`: the connected device on its own thread. `Keyboard` is what Studio knows, `Command` what it asks; `lcp.rs` talks to Lykil keyboards, `via.rs` to VIA ones. another kind of device is another driver next to these
+- `lamps/`: other Dynamic Lighting devices on Windows and where they sit on the desk
+- `anim.rs` eases hover, tab and page changes
 
 Aurea bugs Studio works around are in `../aurea_bug.md`.

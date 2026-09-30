@@ -227,6 +227,10 @@ const KO: &[(&str, &str)] = &[
     ("Seen, but no answer:", "보이지만 응답이 없음:"),
     ("{} (Lykil only)", "{} (Lykil 전용)"),
     (
+        "This VIA keyboard has no dynamic macros",
+        "이 VIA 키보드에는 동적 매크로가 없습니다",
+    ),
+    (
         "This keyboard's VIA definition has no lighting menu",
         "이 키보드의 VIA 정의에는 조명 메뉴가 없습니다",
     ),
