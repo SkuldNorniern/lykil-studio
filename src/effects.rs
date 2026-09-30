@@ -20,6 +20,7 @@ pub const fn name(e: Effect) -> &'static str {
         Effect::Starlight => "Starlight",
         Effect::Rain => "Rain",
         Effect::Heatmap => "Heatmap",
+        Effect::Predict => "Predict",
     }
 }
 
@@ -36,13 +37,19 @@ pub const fn about(e: Effect) -> &'static str {
         Effect::Starlight => "Keys twinkle at random",
         Effect::Rain => "Drops fall down the board",
         Effect::Heatmap => "Keys warm up as you type",
+        Effect::Predict => "Lights the likely next keys",
     }
 }
 
 pub const fn has_background(e: Effect) -> bool {
     matches!(
         e,
-        Effect::Starlight | Effect::Rain | Effect::Reactive | Effect::Ripple | Effect::Heatmap
+        Effect::Starlight
+            | Effect::Rain
+            | Effect::Reactive
+            | Effect::Ripple
+            | Effect::Heatmap
+            | Effect::Predict
     )
 }
 
@@ -108,6 +115,7 @@ pub fn preview(
         pressed: since_press,
         presses: &recent,
         heat,
+        predicted: presses.predicted.get(index).copied().unwrap_or(0),
     };
     shade(s, at, &moment).to_rgb()
 }

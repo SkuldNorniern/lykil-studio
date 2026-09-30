@@ -13,7 +13,7 @@ use std::sync::mpsc::Sender;
 use aurea::{KeyCode, MouseButton, WindowEvent};
 use lykil::binding::Binding;
 use lykil::keycode::Modifiers;
-use lykil::lighting::{Effect, Hsv, Palette, Rgb, Settings};
+use lykil::lighting::{Effect, Hsv, KeyRole, Palette, Rgb, Settings};
 
 use crate::anim::{Anim, Key};
 use crate::colour;
@@ -290,6 +290,12 @@ impl Shared {
         let points = crate::effects::points(desc, true);
         let size = self.lighting().map_or(0, |s| s.size);
         self.ui.presses.set_reach(&points, size);
+        self.ui.presses.predicting = self.lighting().is_some_and(|s| s.effect == Effect::Predict);
+        if self.ui.presses.predicting {
+            let base = self.keyboard.keymap.first();
+            let roles = base.map(|b| b.iter().map(|b| KeyRole::of(*b)).collect());
+            self.ui.presses.set_roles(roles.unwrap_or_default());
+        }
         let time = self.ui.anim.time();
         self.ui.presses.follow(&down, time);
     }

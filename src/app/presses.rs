@@ -1,9 +1,12 @@
-//! Recent key presses and heat, for the reactive, ripple and heatmap
-//! previews.
+//! Recent key presses, heat and the next-key table, for the reactive,
+//! ripple, heatmap and predict previews.
 
 use std::collections::VecDeque;
 
-use lykil::lighting::RIPPLES;
+use lykil::lighting::{KeyRole, Predictor, RIPPLES};
+
+/// Keys the predict preview keeps a table for.
+const PREDICT_KEYS: usize = 256;
 
 /// Recent key presses, for the reactive and ripple previews.
 #[derive(Debug, Default)]
@@ -18,6 +21,12 @@ pub struct Presses {
     /// For each key, the keys a press warms and by how much, with the
     /// size it was worked out for.
     reach: (u8, Vec<Vec<(usize, f32)>>),
+    /// The predict effect run on the presses Studio sees, as the keyboard
+    /// runs it on its own; it learns only while that effect is on.
+    predictor: Box<Predictor<PREDICT_KEYS>>,
+    /// What each key does to the prediction.
+    roles: Vec<KeyRole>,
+    pub predicting: bool,
 }
 
 /// Heat one press adds, as the firmware's 22000 of 65535.
@@ -42,6 +51,10 @@ impl Presses {
             // Speed only sets how fast heat goes; for adding, any will do.
             let warm = self.heat_at(k, time, 128);
             self.heat[k] = ((warm + HEAT_PER_PRESS * share).min(1.0), time);
+        }
+        if self.predicting {
+            let role = self.roles.get(key).copied().unwrap_or_default();
+            self.predictor.press(key, role);
         }
         if self.recent.len() == RIPPLES {
             self.recent.pop_front();
@@ -75,6 +88,18 @@ impl Presses {
         self.reach = (size, points.iter().map(|p| near(*p)).collect());
     }
 
+    /// What each key does to the prediction, by key.
+    pub fn set_roles(&mut self, roles: Vec<KeyRole>) {
+        self.roles = roles;
+    }
+
+    /// How likely each key is to come next, `0..=255`, by key.
+    pub fn predicted(&self) -> Vec<u8> {
+        let mut glow = [0; PREDICT_KEYS];
+        self.predictor.glow(&mut glow);
+        glow.to_vec()
+    }
+
     /// Key `key`'s heat at `time`, cooling as the firmware does: about 10 s
     /// from hot to cold at speed 128.
     pub fn heat_at(&self, key: usize, time: f32, speed: u8) -> f32 {
@@ -98,5 +123,29 @@ impl Presses {
             }
         }
         self.down = down.to_vec();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn predict_learns_only_while_on() {
+        let mut p = Presses::default();
+        p.set_roles(vec![KeyRole::Break, KeyRole::Learn, KeyRole::Learn]);
+        let typing = |p: &mut Presses| {
+            for _ in 0..3 {
+                for k in [1, 2, 0] {
+                    p.press(k, 0.0);
+                }
+            }
+            p.press(1, 0.0);
+        };
+        typing(&mut p);
+        assert!(p.predicted().iter().all(|g| *g == 0));
+        p.predicting = true;
+        typing(&mut p);
+        assert_eq!(p.predicted()[2], 255);
     }
 }

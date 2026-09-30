@@ -47,10 +47,16 @@ pub fn led_strip(
     let heat = (0..CELLS)
         .map(|i| (1.0 - i.abs_diff(key) as f32 / 3.0).max(0.0) * left)
         .collect();
+    // For predict: a few cells after the pressed one, dimmer each.
+    let mut predicted = vec![0; CELLS];
+    for (step, glow) in [(3, 255), (5, 176), (8, 120)] {
+        predicted[(key + step) % CELLS] = glow;
+    }
     let presses = Presses {
         at: &at,
         recent: vec![(key, n * every)],
         heat,
+        predicted,
     };
     #[allow(clippy::cast_precision_loss)]
     let cell_w = strip.w / CELLS as f32;

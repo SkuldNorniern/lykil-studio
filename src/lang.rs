@@ -389,6 +389,12 @@ const KO: &[(&str, &str)] = &[
         "글자와 조합키를 두 색으로",
     ),
     ("Red and green", "빨강과 초록"),
+    ("Predict", "예측"),
+    ("Lights the likely next keys", "다음에 칠 키를 밝힘"),
+    (
+        "It learns which key follows which while it runs, in the keyboard's memory only: gone when it is unplugged. The picture learns from what Studio sees.",
+        "켜져 있는 동안 어떤 키 다음에 어떤 키가 오는지 배웁니다. 키보드 메모리에만 있고 뽑으면 사라집니다. 그림은 Studio가 본 입력으로 배웁니다.",
+    ),
     (
         "Switching reconnects the keyboard for about a second, so Windows sees the change.",
         "바꾸면 Windows가 알아차리도록 키보드가 1초쯤 다시 연결됩니다.",

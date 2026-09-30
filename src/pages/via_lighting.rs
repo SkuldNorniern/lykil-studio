@@ -51,6 +51,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         at: &[],
         recent: Vec::new(),
         heat: Vec::new(),
+        predicted: Vec::new(),
     };
     let kb_area = Area::new(body.x, body.y + pen.s(4.0), body.w, body.h * 0.44);
     let used = keyboard::keyboard(

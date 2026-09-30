@@ -52,6 +52,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
         heat: (0..points.len())
             .map(|k| shared.ui.presses.heat_at(k, time, settings.speed))
             .collect(),
+        predicted: shared.ui.presses.predicted(),
     };
     let kb_area = Area::new(body.x, body.y + pen.s(4.0), body.w, body.h * 0.44);
     let used = keyboard::keyboard(
@@ -110,6 +111,9 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
             .into(),
         _ if brushing => lang
             .tr("Click or drag to paint, right click takes a key's colour. Ctrl+C and Ctrl+V copy and paste colours.")
+            .into(),
+        _ if settings.effect == Effect::Predict => lang
+            .tr("It learns which key follows which while it runs, in the keyboard's memory only: gone when it is unplugged. The picture learns from what Studio sees.")
             .into(),
         _ if settings.effect.reacts() => lang
             .tr("Type on the keyboard, or click keys here, to see it.")

@@ -247,4 +247,6 @@ pub struct Presses<'a> {
     pub at: &'a [Option<f32>],
     pub recent: Vec<(usize, f32)>,
     pub heat: Vec<f32>,
+    /// How likely each key is to come next, `0..=255`.
+    pub predicted: Vec<u8>,
 }
