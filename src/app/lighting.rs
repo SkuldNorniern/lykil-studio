@@ -7,7 +7,7 @@ use aurea::{KeyCode, WindowEvent};
 use lykil::lighting::{Effect, Hsv, Palette, Rgb, Settings};
 
 use crate::colour;
-use crate::device::Command;
+use crate::devices::Command;
 
 use super::{Field, Hit, RECENT, Shared, Tab};
 

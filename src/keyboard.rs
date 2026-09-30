@@ -9,7 +9,7 @@ use lykil_protocol::describe::Description;
 
 use crate::anim::{Key, rate};
 use crate::app::Hit;
-use crate::device::Keyboard;
+use crate::devices::Keyboard;
 use crate::draw::{Area, Hits, Pen, color};
 use crate::legend;
 

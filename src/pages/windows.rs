@@ -3,7 +3,7 @@
 use aurea::AureaResult;
 
 use crate::app::{Hit, Shared};
-use crate::device::Connection;
+use crate::devices::Connection;
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
 use crate::widgets;
@@ -209,10 +209,9 @@ fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Aure
             color::mix(color::BACKGROUND, color::RAISED, 0.5)
         };
         pen.round(rect, pen.s(6.0), color::mix(face, color::HOVER, hover))?;
-        let crowded = shared
-            .lamps
-            .iter()
-            .any(|o| o.id != d.id && crate::desk::overlaps((d.place, d.size), (o.place, o.size)));
+        let crowded = shared.lamps.iter().any(|o| {
+            o.id != d.id && crate::lamps::desk::overlaps((d.place, d.size), (o.place, o.size))
+        });
         if crowded {
             pen.outline(rect, pen.s(6.0), pen.s(2.0), color::BAD)?;
         } else if picked {

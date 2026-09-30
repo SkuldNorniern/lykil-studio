@@ -4,7 +4,7 @@
 use aurea::AureaResult;
 
 use crate::app::Hit;
-use crate::device::{Connection, Keyboard};
+use crate::devices::{Connection, Keyboard};
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
 use crate::widgets::pills;
@@ -103,7 +103,7 @@ pub fn needs_definition(
         ),
         lang.tr("Put the file in this folder; Studio picks it up by itself:")
             .to_string(),
-        crate::via::folder().display().to_string(),
+        crate::devices::via::folder().display().to_string(),
     ];
     for (i, line) in lines.iter().enumerate() {
         #[allow(clippy::cast_precision_loss)]

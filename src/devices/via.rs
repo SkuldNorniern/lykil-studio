@@ -17,7 +17,7 @@ use lykil_qmk::send_string::{self, Item};
 use lykil_qmk::{AbiVersion, decode, encode, instantiate, project};
 
 use crate::app::Shared;
-use crate::device::{Command, Connection, Keyboard, update};
+use crate::devices::{Command, Connection, Keyboard, update};
 
 const RESCAN: Duration = Duration::from_secs(1);
 /// A changed channel is saved once it has been left alone this long:

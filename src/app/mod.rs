@@ -17,7 +17,7 @@ use lykil::lighting::{Effect, Hsv, Palette, Rgb, Settings};
 
 use crate::anim::{Anim, Key};
 use crate::colour;
-use crate::device::{Command, Keyboard};
+use crate::devices::{Command, Keyboard};
 use crate::draw::Area;
 use crate::edit::{self, Hold};
 
@@ -489,7 +489,7 @@ impl Shared {
             Hit::LampSync(_) | Hit::DeskDevice(_) | Hit::DeviceLevel | Hit::LampFollow(_) => {
                 self.click_desk(hit, tx);
             }
-            Hit::ViaFolder => crate::reveal(crate::via::folder()),
+            Hit::ViaFolder => crate::reveal(crate::devices::via::folder()),
             Hit::LightingSettings => crate::reveal("ms-settings:personalization-lighting"),
             Hit::Lang => self.ui.lang = self.ui.lang.other(),
             Hit::Layer(l) => self.ui.layer = l,

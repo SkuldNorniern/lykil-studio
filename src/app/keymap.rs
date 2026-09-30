@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 use aurea::KeyCode;
 use lykil::binding::Binding;
 
-use crate::device::Command;
+use crate::devices::Command;
 
 use super::Shared;
 

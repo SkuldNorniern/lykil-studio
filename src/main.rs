@@ -3,8 +3,7 @@
 mod anim;
 mod app;
 mod colour;
-mod desk;
-mod device;
+mod devices;
 mod draw;
 mod edit;
 mod icons;
@@ -13,7 +12,6 @@ mod lamps;
 mod lang;
 mod legend;
 mod pages;
-mod via;
 mod view;
 mod widgets;
 
@@ -84,7 +82,7 @@ fn run() -> aurea::AureaResult<()> {
         s.ui.scale = canvas.scale_factor();
         s.ui.lang = lang::Lang::detect();
     }
-    let tx = device::spawn(Arc::clone(&shared), canvas.id());
+    let tx = devices::spawn(Arc::clone(&shared), canvas.id());
     let lamps = lamps::spawn(Arc::clone(&shared));
     lock(&shared).lamp_tx = Some(lamps);
 

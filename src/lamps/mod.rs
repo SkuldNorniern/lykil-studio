@@ -1,6 +1,8 @@
 //! Other Dynamic Lighting devices through `Windows.Devices.Lights`.
 //! Windows lets an unpackaged app light them only while it is in front.
 
+pub mod desk;
+
 #[cfg(windows)]
 use std::sync::PoisonError;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -13,7 +15,7 @@ use lykil::lighting::{Effect, Moment, Point, Rgb, Settings, shade};
 use lykil::time::Tick;
 
 use crate::app::Shared;
-use crate::desk::Place;
+use crate::lamps::desk::Place;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lamp {
@@ -57,7 +59,7 @@ pub fn spawn(shared: Arc<Mutex<Shared>>) -> Sender<LampCommand> {
 
 #[cfg(windows)]
 fn run(shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
-    let mut devices = os::Devices::new(crate::desk::Desk::load());
+    let mut devices = os::Devices::new(crate::lamps::desk::Desk::load());
     let mut sync = false;
     let mut next_scan = Instant::now();
     let start = Instant::now();
@@ -112,7 +114,7 @@ pub fn colour(settings: Settings, at: Point, now: Tick) -> Rgb {
 
 /// Every lamp's colour, per device in `lamps`, lit in desk space.
 pub fn colours(lamps: &[Lamp], settings: Settings, now: Tick) -> Vec<Vec<Rgb>> {
-    let frame = crate::desk::Frame::around(
+    let frame = crate::lamps::desk::Frame::around(
         lamps
             .iter()
             .filter(|l| l.place.follow)
@@ -138,7 +140,7 @@ mod os {
     use windows_future::{AsyncStatus, IAsyncOperation};
 
     use super::{Lamp, LampCommand, UNKNOWN_SIZE};
-    use crate::desk::{Desk, Frame, Place};
+    use crate::lamps::desk::{Desk, Frame, Place};
 
     struct Device {
         id: String,
@@ -231,7 +233,7 @@ mod os {
                 let Some(place) = self.desk.get(&id) else {
                     continue;
                 };
-                let spot = crate::desk::free_spot((place, size), &placed);
+                let spot = crate::lamps::desk::free_spot((place, size), &placed);
                 if spot != place {
                     self.desk.set(&id, spot);
                     moved = true;
@@ -278,7 +280,7 @@ mod os {
                 .filter(|d| d.id != id)
                 .filter_map(|d| Some((self.desk.get(&d.id)?, d.size)))
                 .collect();
-            let spot = crate::desk::free_spot((place, size), &others);
+            let spot = crate::lamps::desk::free_spot((place, size), &others);
             if spot != place {
                 self.desk.set(id, spot);
                 self.desk.save();

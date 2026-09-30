@@ -5,9 +5,9 @@ use aurea::AureaResult;
 use lykil_qmk::import::ViaControlKind;
 
 use crate::app::{Hit, Shared};
+use crate::devices::via::ViaSetting;
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
-use crate::via::ViaSetting;
 use crate::widgets::colour::hue_bar;
 use crate::widgets::{self, segmented, slider};
 

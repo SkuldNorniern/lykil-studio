@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::Sender;
 
-use crate::device::Command;
+use crate::devices::Command;
 
 use super::Shared;
 

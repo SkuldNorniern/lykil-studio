@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::Sender;
 
-use crate::device::Command;
+use crate::devices::Command;
 
 use super::{DeskGrab, Hit, Shared};
 
@@ -71,7 +71,7 @@ impl Shared {
             .filter(|l| l.id != id)
             .map(|l| (l.place, l.size))
             .collect();
-        let spot = crate::desk::free_spot((moving.place, moving.size), &others);
+        let spot = crate::lamps::desk::free_spot((moving.place, moving.size), &others);
         if spot != moving.place {
             if let Some(l) = self.lamps.iter_mut().find(|l| l.id == id) {
                 l.place = spot;

@@ -5,7 +5,7 @@ use aurea::render::{Color, DrawingContext};
 
 use crate::anim::{self, Key, rate};
 use crate::app::{Hit, Shared, Tab};
-use crate::device::{Connection, Keyboard};
+use crate::devices::{Connection, Keyboard};
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
 use crate::pages::lighting as lights;

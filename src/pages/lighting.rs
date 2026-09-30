@@ -331,7 +331,7 @@ fn effect_cards(
     area: Area,
     settings: Settings,
     time: f32,
-    kb: &crate::device::Keyboard,
+    kb: &crate::devices::Keyboard,
     hits: &mut Hits,
 ) -> AureaResult<()> {
     let lang = pen.lang;
@@ -394,7 +394,7 @@ fn effect_strip(
     settings: Settings,
     e: Effect,
     time: f32,
-    kb: &crate::device::Keyboard,
+    kb: &crate::devices::Keyboard,
 ) -> AureaResult<()> {
     const CELLS: usize = 10;
     let s = Settings {
