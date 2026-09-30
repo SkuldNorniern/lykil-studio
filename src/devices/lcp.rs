@@ -62,6 +62,7 @@ pub fn poll(
     update(shared, canvas, |k| {
         *k = Keyboard {
             connection: Connection::Connected,
+            ids: Some(device.ids()).filter(|ids| *ids != (0, 0)),
             // The description's name: Windows may report an interface name
             // as the product string.
             name: description.name.clone(),

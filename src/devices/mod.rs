@@ -45,6 +45,8 @@ pub struct Keyboard {
     /// A VIA keyboard's settings from its definition's menus, with what
     /// they are set to.
     pub via_settings: Vec<crate::devices::via::ViaSetting>,
+    /// USB vendor and product id, when known.
+    pub ids: Option<(u16, u16)>,
 }
 
 impl Keyboard {

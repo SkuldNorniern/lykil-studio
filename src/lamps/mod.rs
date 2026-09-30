@@ -89,6 +89,7 @@ fn run(shared: &Arc<Mutex<Shared>>, rx: &Receiver<LampCommand>) {
         devices.settle();
         let settings = {
             let mut s = shared.lock().unwrap_or_else(PoisonError::into_inner);
+            devices.skip(s.keyboard.ids);
             s.lamps = devices.views();
             s.lamp_sync = sync;
             s.lighting()
@@ -181,6 +182,9 @@ mod os {
         desk: Desk,
         /// Newly found devices since the last untangle.
         fresh: bool,
+        /// The connected keyboard's part of the device id: it is lit by
+        /// its own firmware, not as one of the other devices.
+        skip: Option<String>,
     }
 
     impl Devices {
@@ -190,6 +194,7 @@ mod os {
                 opening: Vec::new(),
                 desk,
                 fresh: false,
+                skip: None,
             }
         }
 
@@ -322,12 +327,24 @@ mod os {
             self.desk.save();
         }
 
+        /// Leaves out the device with these USB ids.
+        pub fn skip(&mut self, ids: Option<(u16, u16)>) {
+            self.skip = ids.map(|(v, p)| format!("VID_{v:04X}&PID_{p:04X}"));
+        }
+
+        fn shown(&self, d: &Device) -> bool {
+            self.skip
+                .as_ref()
+                .is_none_or(|s| !d.id.to_uppercase().contains(s.as_str()))
+        }
+
         pub fn views(&mut self) -> Vec<Lamp> {
             let before = self.desk.clone();
             let mut out: Vec<Lamp> = Vec::new();
             for (id, name, kind, available, open, size, lamps) in self
                 .open
                 .iter()
+                .filter(|d| self.shown(d))
                 .map(|d| {
                     let kind = d.array.LampArrayKind().unwrap_or_default();
                     (
@@ -376,7 +393,8 @@ mod os {
         /// Lights every followed device, in desk space, with its own
         /// effect if it has one.
         pub fn show(&self, colour: impl Fn(Option<Settings>, Point) -> Rgb) {
-            let followed = |d: &&Device| self.desk.get(&d.id).is_some_and(|p| p.follow);
+            let followed =
+                |d: &&Device| self.shown(d) && self.desk.get(&d.id).is_some_and(|p| p.follow);
             let frame = Frame::around(
                 self.open
                     .iter()

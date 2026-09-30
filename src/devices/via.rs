@@ -295,6 +295,17 @@ fn definition(
     }
 }
 
+/// Layer count, keycode set and every keycode.
+fn keymap(
+    device: &mut ViaDevice,
+    def: &ViaDefinition,
+) -> Result<(u8, AbiVersion, Vec<Vec<u16>>), DeviceError> {
+    let layers = device.layer_count()?;
+    let abi = abi(device.keycodes_version()?);
+    let codes = device.keymap(layers, def.rows, def.cols)?;
+    Ok((layers, abi, codes))
+}
+
 pub fn poll(
     mut device: ViaDevice,
     rx: &Receiver<Command>,
@@ -311,13 +322,7 @@ pub fn poll(
         Ok(d) => d,
         Err(e) => return e.to_string(),
     };
-    let loaded = (|| -> Result<_, DeviceError> {
-        let layers = device.layer_count()?;
-        let abi = abi(device.keycodes_version()?);
-        let codes = device.keymap(layers, def.rows, def.cols)?;
-        Ok((layers, abi, codes))
-    })();
-    let (layers, abi, codes) = match loaded {
+    let (layers, abi, codes) = match keymap(&mut device, &def) {
         Ok(l) => l,
         Err(e) => return e.to_string(),
     };
@@ -333,6 +338,7 @@ pub fn poll(
     update(shared, canvas, |k| {
         *k = Keyboard {
             connection: Connection::Connected,
+            ids: Some(ids),
             name: def.name.clone(),
             description: Some(description(&def, layers)),
             keymap: bindings(&codes, &def, abi),
