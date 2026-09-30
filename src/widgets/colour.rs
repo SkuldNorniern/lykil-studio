@@ -90,7 +90,15 @@ pub fn hue_bar(
     Ok(())
 }
 
-pub fn square_and_bar(pen: &mut Pen<'_>, square: Area, c: Hsv, hits: &mut Hits) -> AureaResult<()> {
+/// Saturation across and brightness up in the square, hue in the bar
+/// below it. Dragging them is `square_hit` and `hue_hit`.
+pub fn square_and_bar(
+    pen: &mut Pen<'_>,
+    square: Area,
+    c: Hsv,
+    (square_hit, hue_hit): (Hit, Hit),
+    hits: &mut Hits,
+) -> AureaResult<()> {
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let px = square.w.round() as u32;
     cached(pen, &SQUARE, (c.h, px), square, || square_image(c.h, px))?;
@@ -100,7 +108,7 @@ pub fn square_and_bar(pen: &mut Pen<'_>, square: Area, c: Hsv, hits: &mut Hits) 
         square.y + square.h * (1.0 - f32::from(c.v) / 255.0),
     );
     ring(pen, kx, ky, pen.s(7.0), rgb(c.to_rgb()))?;
-    hits.push((square, Hit::Square));
+    hits.push((square, square_hit));
 
     let bar = Area::new(
         square.x,
@@ -108,7 +116,7 @@ pub fn square_and_bar(pen: &mut Pen<'_>, square: Area, c: Hsv, hits: &mut Hits) 
         square.w,
         pen.s(14.0),
     );
-    hue_bar(pen, bar, c.h, Hit::HueBar, hits)
+    hue_bar(pen, bar, c.h, hue_hit, hits)
 }
 
 pub fn rgb(c: Rgb) -> Color {

@@ -4,13 +4,13 @@ use aurea::AureaResult;
 use lykil::lighting::{Effect, Hsv, Moment, Palette, Point, Rgb, Settings, press_life, shade};
 use lykil::time::{Duration, Tick};
 
-use crate::anim::{Key, rate};
 use crate::app::{Field, Hit, SWATCHES, Shared, Slider};
 use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
 use crate::keyboard::{self, Keys, Presses};
 use crate::widgets::colour::{rgb, square_and_bar};
-use crate::widgets::{self, segmented};
+use crate::widgets::effects::{EffectCard, effect_grid};
+use crate::widgets::{self, Track, segmented};
 
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
     let lang = pen.lang;
@@ -26,7 +26,11 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     let kb = &shared.keyboard;
     let time = pen.anim.time();
     let brushing = settings.effect == Effect::PerKey;
-    let points = kb.description.as_ref().map(points).unwrap_or_default();
+    let points = kb
+        .description
+        .as_ref()
+        .map(|d| points(d, true))
+        .unwrap_or_default();
     let presses = Presses {
         at: &shared.ui.presses.at,
         recent: shared.ui.presses.recent.iter().copied().collect(),
@@ -195,7 +199,7 @@ fn status_line(
 /// Where the effects, the picker and the sliders go. Wide: three
 /// columns. Narrow: effects on top, picker and sliders below. Cards stop
 /// at what they hold instead of stretching down a tall window.
-fn panels(pen: &Pen<'_>, rest: Area, gap: f32) -> (Area, Area, Area) {
+pub fn panels(pen: &Pen<'_>, rest: Area, gap: f32) -> (Area, Area, Area) {
     let picker_w = pen.s(360.0);
     let side_min = pen.s(260.0);
     let effects_min = pen.s(380.0);
@@ -230,9 +234,13 @@ fn panels(pen: &Pen<'_>, rest: Area, gap: f32) -> (Area, Area, Area) {
 /// Each key's place for the effects, as the firmware computes it: key
 /// centres of keys with an LED, scaled so they span `0..=255` across,
 /// `y` on the same scale.
-pub fn points(desc: &lykil_protocol::describe::Description) -> Vec<Option<Point>> {
+/// Each key's place for the effects; with `leds_only`, only keys with an
+/// LED get one.
+pub fn points(desc: &lykil_protocol::describe::Description, leds_only: bool) -> Vec<Option<Point>> {
     let centre = |k: &lykil_protocol::describe::Key| {
-        k.led?;
+        if leds_only {
+            k.led?;
+        }
         k.geometry.map(|[x, y, w, h]| (x + w / 2.0, y + h / 2.0))
     };
     let centres: Vec<_> = desc.keys.iter().map(centre).collect();
@@ -340,55 +348,22 @@ fn effect_cards(
     let lang = pen.lang;
     widgets::label(pen, lang.tr("EFFECT"), area.x, area.y)?;
     let grid = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h - pen.s(20.0));
-    let cols = 4.0;
-    let gap = pen.s(8.0);
-    let cw = (grid.w - gap * (cols - 1.0)) / cols;
-    let rows = Effect::ALL.len().div_ceil(4);
-    #[allow(clippy::cast_precision_loss)]
-    let ch = ((grid.h - gap * (rows - 1) as f32) / rows as f32).min(pen.s(110.0));
-    for (i, e) in Effect::ALL.into_iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let (col, row) = ((i % 4) as f32, (i / 4) as f32);
-        let a = Area::new(grid.x + col * (cw + gap), grid.y + row * (ch + gap), cw, ch);
-        let hit = Hit::Effect(e);
-        let active = e == settings.effect;
-        let t = pen.hover(a, hit);
-        let bg = if active {
-            color::mix(color::RAISED, color::ACCENT, 0.18)
-        } else {
-            color::mix(color::RAISED, color::HOVER, t)
-        };
-        pen.round(a, pen.s(10.0), bg)?;
-        let sel = pen.anim.to(
-            Key::Selected(1000 + i),
-            if active { 1.0 } else { 0.0 },
-            rate::HOVER,
-        );
-        if sel > 0.01 {
-            pen.outline(
-                a,
-                pen.s(10.0),
-                pen.s(2.0),
-                color::mix(bg, color::ACCENT, sel),
-            )?;
-        }
-        let inner = a.inset(pen.s(10.0));
-        pen.text(
-            lang.tr(effect_name(e)),
-            inner.x,
-            inner.y,
-            &pen.bold(13.0),
-            if active { color::TEXT } else { color::DIM },
-        )?;
-        let about = Area::new(inner.x, inner.y + pen.s(18.0), inner.w, pen.s(14.0));
-        pen.fitted_left(lang.tr(effect_about(e)), about, 10.0, 7.0, color::FAINT)?;
-        let strip = Area::new(inner.x, inner.bottom() - pen.s(12.0), inner.w, pen.s(12.0));
-        if strip.y > about.bottom() {
-            effect_strip(pen, strip, settings, e, time, kb)?;
-        }
-        hits.push((a, hit));
-    }
-    Ok(())
+    let cards: Vec<EffectCard<'_>> = Effect::ALL
+        .into_iter()
+        .map(|e| EffectCard {
+            name: lang.tr(effect_name(e)),
+            about: lang.tr(effect_about(e)),
+            hit: Hit::Effect(e),
+            active: e == settings.effect,
+        })
+        .collect();
+    effect_grid(
+        pen,
+        grid,
+        &cards,
+        &mut |pen, bar, i| effect_strip(pen, bar, settings, Effect::ALL[i], time, kb),
+        hits,
+    )
 }
 
 fn effect_strip(
@@ -499,7 +474,7 @@ fn picker_card(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) 
         .min(pen.s(170.0))
         .max(pen.s(60.0));
     let square = Area::new(area.x, top, side, side);
-    square_and_bar(pen, square, picked, hits)?;
+    square_and_bar(pen, square, picked, (Hit::Square, Hit::HueBar), hits)?;
     let right = Area::new(
         square.right() + pen.s(16.0),
         top,
@@ -785,62 +760,30 @@ fn slider(
     shared: &Shared,
     hits: &mut Hits,
 ) -> AureaResult<()> {
-    const STEPS: u8 = 24;
     let lang = pen.lang;
-    widgets::label(pen, lang.tr(name), area.x, area.y)?;
     // For the press effects, speed is how long a press shows.
-    let pct =
+    let text =
         if which == Slider::Speed && matches!(settings.effect, Effect::Reactive | Effect::Ripple) {
             format!("{:.1} s", f64::from(press_life(value).0) / 1000.0)
         } else {
-            format!("{}%", u32::from(value) * 100 / 255)
+            widgets::percent(f32::from(value) / 255.0)
         };
-    let font = pen.font(11.0);
-    let vw = pen.width(&pct, &font);
-    pen.text(&pct, area.right() - vw, area.y, &font, color::DIM)?;
-    let track = Area::new(area.x, area.y + pen.s(20.0), area.w, pen.s(10.0));
-    pen.round(track, track.h / 2.0, color::RAISED)?;
-    let inner = track.inset(pen.s(2.0));
-    let seg_w = inner.w / f32::from(STEPS);
-    for i in 0..STEPS {
-        #[allow(clippy::cast_possible_truncation)]
-        let v = (u32::from(i) * 255 / u32::from(STEPS - 1)) as u8;
-        let c = match which {
-            Slider::Brightness => Hsv::new(settings.color.h, settings.color.s, v).to_rgb(),
-            Slider::Speed | Slider::Size => Hsv::new(0, 0, 60 + v / 3).to_rgb(),
-            Slider::Background => Hsv::new(settings.color.h, settings.color.s, v / 2).to_rgb(),
-        };
-        let seg = Area::new(
-            inner.x + seg_w * f32::from(i),
-            inner.y,
-            seg_w + 1.0,
-            inner.h,
-        );
-        pen.fill(seg, rgb(c))?;
-    }
-    let key = Key::Knob(which);
-    let target = f32::from(value);
-    if shared.ui.dragging(Hit::Slider(which)) {
-        pen.anim.set(key, target);
-    }
-    let v = pen.anim.to(key, target, rate::KNOB);
-    let hit = Hit::Slider(which);
-    let grab = Area::new(
-        track.x - pen.s(8.0),
-        track.y - pen.s(10.0),
-        track.w + pen.s(16.0),
-        track.h + pen.s(20.0),
-    );
-    let t = pen.hover(grab, hit);
-    let knob = track.x + track.w * v / 255.0;
-    let r = pen.s(8.0) + pen.s(2.0) * t;
-    pen.circle(knob, track.y + track.h / 2.0, r, color::TEXT)?;
-    pen.circle(
-        knob,
-        track.y + track.h / 2.0,
-        r - pen.s(3.0),
-        color::BACKGROUND,
-    )?;
-    hits.push((grab, hit));
-    Ok(())
+    let (h, s) = (settings.color.h, settings.color.s);
+    let shade = |v: u8| match which {
+        Slider::Brightness => Hsv::new(h, s, v).to_rgb(),
+        Slider::Speed | Slider::Size => Hsv::new(0, 0, 60 + v / 3).to_rgb(),
+        Slider::Background => Hsv::new(h, s, v / 2).to_rgb(),
+    };
+    widgets::slider(
+        pen,
+        area,
+        (lang.tr(name), &text),
+        (
+            f32::from(value) / 255.0,
+            Hit::Slider(which),
+            Track::Shades(&shade),
+        ),
+        shared,
+        hits,
+    )
 }

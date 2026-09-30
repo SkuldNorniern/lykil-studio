@@ -79,13 +79,14 @@ impl Shared {
             }
             Hit::Swatch(c) => self.pick(colour::to_hsv(c), tx),
             Hit::ViaOption(i, v) => self.set_via(i, 0, v, tx),
+            Hit::ViaGroup(g) => self.ui.via_group = g,
             Hit::ViaToggle(i, on) => self.set_via(i, 0, u8::from(on), tx),
             Hit::Slider(_)
             | Hit::Square
             | Hit::HueBar
             | Hit::ViaRange(_)
             | Hit::ViaHue(_)
-            | Hit::ViaSat(_) => {
+            | Hit::ViaSquare(_) => {
                 if let Some((area, _)) = self.ui.hits.iter().rev().find(|(_, h)| *h == hit) {
                     let area = *area;
                     self.ui.drag = Some((hit, area));

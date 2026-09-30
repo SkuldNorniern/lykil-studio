@@ -157,7 +157,11 @@ pub enum Hit {
     ViaOption(usize, u8),
     ViaToggle(usize, bool),
     ViaHue(usize),
-    ViaSat(usize),
+    /// The colour square of the VIA colour setting at this index:
+    /// saturation across, its section's brightness up.
+    ViaSquare(usize),
+    /// A section of the VIA menu.
+    ViaGroup(usize),
     /// The picked desk device: its own effect or the keyboard's.
     DeviceOwn(bool),
     DeviceEffect(Effect),
@@ -212,6 +216,8 @@ pub struct Ui {
     pub layer: u8,
     pub selected: Option<usize>,
     pub group: usize,
+    /// The VIA menu section on the lighting page.
+    pub via_group: usize,
     pub macro_id: usize,
     pub macro_text: Option<String>,
     pub mouse: (f32, f32),
@@ -277,7 +283,7 @@ impl Shared {
             .iter()
             .map(|k| k.cell.is_some_and(|c| self.keyboard.closed(c)))
             .collect();
-        let points = crate::pages::lighting::points(desc);
+        let points = crate::pages::lighting::points(desc, true);
         let size = self.lighting().map_or(0, |s| s.size);
         self.ui.presses.set_reach(&points, size);
         let time = self.ui.anim.time();
@@ -594,22 +600,23 @@ impl Shared {
             }
             Hit::DeskDevice(i) => self.move_device(i),
             Hit::ViaRange(i) => {
-                let span = self
-                    .keyboard
-                    .via_settings
-                    .get(i)
-                    .map(|s| match s.control.kind {
-                        lykil_qmk::import::ViaControlKind::Range { min, max } => (min, max),
-                        _ => (0, 255),
-                    });
-                if let Some((min, max)) = span {
-                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                    let v = min + (across * f32::from(max.saturating_sub(min))).round() as u8;
+                if let Some(v) = self.keyboard.via_settings.get(i).map(|s| s.at(across)) {
                     self.set_via(i, 0, v, tx);
                 }
             }
             Hit::ViaHue(i) => self.set_via(i, 0, byte(across).min(254), tx),
-            Hit::ViaSat(i) => self.set_via(i, 1, byte(across), tx),
+            Hit::ViaSquare(i) => {
+                self.set_via(i, 1, byte(across), tx);
+                let brightness = crate::devices::via::groups(&self.keyboard.via_settings)
+                    .into_iter()
+                    .find(|g| g.color == Some(i))
+                    .and_then(|g| g.brightness);
+                if let Some(b) = brightness
+                    && let Some(v) = self.keyboard.via_settings.get(b).map(|s| s.at(1.0 - down))
+                {
+                    self.set_via(b, 0, v, tx);
+                }
+            }
             Hit::DeviceHue => self.change_own(|own| {
                 if let Some(s) = own {
                     s.color.h = byte(across).min(254);

@@ -2,10 +2,11 @@
 //! segmented bars and text fields.
 
 pub mod colour;
+pub mod effects;
 
 use aurea::AureaResult;
 use aurea::render::Color;
-use lykil::lighting::Hsv;
+use lykil::lighting::Rgb;
 
 use crate::anim::{Key, rate};
 use crate::app::{Hit, Shared};
@@ -225,52 +226,78 @@ pub fn ring(pen: &mut Pen<'_>, x: f32, y: f32, r: f32, c: Color) -> AureaResult<
 }
 
 /// A track with a knob at `t` (`0..=1`) and the percentage on the right.
+/// What a slider's track shows.
+#[derive(Clone, Copy)]
+pub enum Track<'a> {
+    /// Filled up to the knob.
+    Plain,
+    /// In steps, each the colour that position gives.
+    Shades(&'a dyn Fn(u8) -> Rgb),
+}
+
+/// A labelled slider at `t` (`0..=1`) with `value` written on the right.
+/// Dragging it is `hit`.
 pub fn slider(
     pen: &mut Pen<'_>,
     area: Area,
-    name: &str,
-    t: f32,
-    hit: Hit,
+    (name, value): (&str, &str),
+    (t, hit, track): (f32, Hit, Track<'_>),
     shared: &Shared,
     hits: &mut Hits,
 ) -> AureaResult<()> {
+    const STEPS: u8 = 24;
     label(pen, name, area.x, area.y)?;
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let pct = format!("{}%", (t * 100.0).round() as u32);
     let font = pen.font(11.0);
-    let vw = pen.width(&pct, &font);
-    pen.text(&pct, area.right() - vw, area.y, &font, color::DIM)?;
-    let track = Area::new(area.x, area.y + pen.s(20.0), area.w, pen.s(10.0));
-    pen.round(track, track.h / 2.0, color::RAISED)?;
-    let filled = Area::new(track.x, track.y, track.w * t, track.h);
-    pen.round(
-        filled,
-        track.h / 2.0,
-        colour::rgb(Hsv::new(170, 120, 200).to_rgb()),
-    )?;
+    let vw = pen.width(value, &font);
+    pen.text(value, area.right() - vw, area.y, &font, color::DIM)?;
+    let bar = Area::new(area.x, area.y + pen.s(20.0), area.w, pen.s(10.0));
+    pen.round(bar, bar.h / 2.0, color::RAISED)?;
+    match track {
+        Track::Plain => {
+            let filled = Area::new(bar.x, bar.y, bar.w * t, bar.h);
+            pen.round(filled, bar.h / 2.0, color::ACCENT)?;
+        }
+        Track::Shades(shade) => {
+            let inner = bar.inset(pen.s(2.0));
+            let seg_w = inner.w / f32::from(STEPS);
+            for i in 0..STEPS {
+                #[allow(clippy::cast_possible_truncation)]
+                let v = (u32::from(i) * 255 / u32::from(STEPS - 1)) as u8;
+                let seg = Area::new(
+                    inner.x + seg_w * f32::from(i),
+                    inner.y,
+                    seg_w + 1.0,
+                    inner.h,
+                );
+                pen.fill(seg, colour::rgb(shade(v)))?;
+            }
+        }
+    }
     let key = Key::HitKnob(hit);
     if shared.ui.dragging(hit) {
         pen.anim.set(key, t);
     }
     let v = pen.anim.to(key, t, rate::KNOB);
     let grab = Area::new(
-        track.x - pen.s(8.0),
-        track.y - pen.s(10.0),
-        track.w + pen.s(16.0),
-        track.h + pen.s(20.0),
+        bar.x - pen.s(8.0),
+        bar.y - pen.s(10.0),
+        bar.w + pen.s(16.0),
+        bar.h + pen.s(20.0),
     );
     let hover = pen.hover(grab, hit);
-    let knob = track.x + track.w * v;
+    let knob = bar.x + bar.w * v;
     let r = pen.s(8.0) + pen.s(2.0) * hover;
-    pen.circle(knob, track.y + track.h / 2.0, r, color::TEXT)?;
-    pen.circle(
-        knob,
-        track.y + track.h / 2.0,
-        r - pen.s(3.0),
-        color::BACKGROUND,
-    )?;
+    pen.circle(knob, bar.y + bar.h / 2.0, r, color::TEXT)?;
+    pen.circle(knob, bar.y + bar.h / 2.0, r - pen.s(3.0), color::BACKGROUND)?;
     hits.push((grab, hit));
     Ok(())
+}
+
+/// `t` as a percentage.
+pub fn percent(t: f32) -> String {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let p = (t.clamp(0.0, 1.0) * 100.0).round() as u32;
+    format!("{p}%")
 }
 
 pub fn uptime(ms: u32) -> String {

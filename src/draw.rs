@@ -195,6 +195,26 @@ impl Pen<'_> {
         self.text(text, area.x, y, &font, c)
     }
 
+    /// `text` at one size, cut short with an ellipsis if it is wider than
+    /// `area`.
+    pub fn clipped_left(
+        &mut self,
+        text: &str,
+        area: Area,
+        font: &Font,
+        c: Color,
+    ) -> AureaResult<()> {
+        let mut shown = text.to_string();
+        while self.width(&shown, font) > area.w && shown.chars().count() > 1 {
+            shown = shown.trim_end_matches('\u{2026}').to_string();
+            shown.pop();
+            shown = shown.trim_end().to_string();
+            shown.push('\u{2026}');
+        }
+        let y = area.y + (area.h - font.size) / 2.0;
+        self.text(&shown, area.x, y, font, c)
+    }
+
     pub fn fitted(
         &mut self,
         text: &str,

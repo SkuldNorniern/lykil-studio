@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::app::{Hit, Slider};
+use crate::app::Hit;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
@@ -12,7 +12,6 @@ pub enum Key {
     Down(usize),
     TabBar,
     Page,
-    Knob(Slider),
     /// A slider drawn by `widgets::slider`, by its hit.
     HitKnob(Hit),
 }

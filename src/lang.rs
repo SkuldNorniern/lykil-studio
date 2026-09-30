@@ -223,6 +223,18 @@ const KO: &[(&str, &str)] = &[
     ("Seen, but no answer:", "보이지만 응답이 없음:"),
     ("{} (Lykil only)", "{} (Lykil 전용)"),
     (
+        "The keyboard runs this effect. The picture shows its colour, VIA effects are not played here.",
+        "키보드가 이 효과를 켜고 있습니다. 그림은 색만 보여 주고, VIA 효과는 여기서 재생하지 않습니다.",
+    ),
+    (
+        "This section has no effects to pick",
+        "이 항목에는 고를 효과가 없습니다",
+    ),
+    (
+        "This section has no colour setting",
+        "이 항목에는 색 설정이 없습니다",
+    ),
+    (
         "The keyboard restarts in a second so Windows sees the change.",
         "Windows가 바뀐 설정을 알 수 있도록 키보드가 잠시 뒤 다시 시작합니다.",
     ),

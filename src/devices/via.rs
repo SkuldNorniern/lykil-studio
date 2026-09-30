@@ -31,7 +31,82 @@ pub struct ViaSetting {
     pub value: Vec<u8>,
 }
 
+/// One section of a VIA menu, with the settings the lighting page lays
+/// out the way it does a Lykil keyboard's: by their index in the settings.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ViaGroup {
+    pub name: String,
+    pub brightness: Option<usize>,
+    pub effect: Option<usize>,
+    pub speed: Option<usize>,
+    pub color: Option<usize>,
+    /// Anything else in the section.
+    pub other: Vec<usize>,
+}
+
+/// `settings` by section, in menu order. Brightness, effect, speed and
+/// colour are VIA's lighting value ids on the lighting channels.
+pub fn groups(settings: &[ViaSetting]) -> Vec<ViaGroup> {
+    use lykil_protocol::via::{channel, lighting};
+    let mut out: Vec<ViaGroup> = Vec::new();
+    for (i, s) in settings.iter().enumerate() {
+        let c = &s.control;
+        let at = if let Some(at) = out.iter().position(|g| g.name == c.group) {
+            at
+        } else {
+            out.push(ViaGroup {
+                name: c.group.clone(),
+                ..ViaGroup::default()
+            });
+            out.len() - 1
+        };
+        let g = &mut out[at];
+        let lights = matches!(
+            c.channel,
+            channel::BACKLIGHT | channel::RGBLIGHT | channel::RGB_MATRIX | channel::LED_MATRIX
+        );
+        let slot = match (&c.kind, c.value) {
+            (ViaControlKind::Range { .. }, lighting::BRIGHTNESS) if lights => &mut g.brightness,
+            (ViaControlKind::Dropdown(_), lighting::EFFECT) if lights => &mut g.effect,
+            (ViaControlKind::Range { .. }, lighting::EFFECT_SPEED) if lights => &mut g.speed,
+            (ViaControlKind::Color, _) => &mut g.color,
+            _ => {
+                g.other.push(i);
+                continue;
+            }
+        };
+        if slot.is_none() {
+            *slot = Some(i);
+        } else {
+            g.other.push(i);
+        }
+    }
+    out
+}
+
 impl ViaSetting {
+    /// Where the value sits in its range, `0..=1`.
+    pub fn fraction(&self) -> f32 {
+        match self.control.kind {
+            ViaControlKind::Range { min, max } => {
+                let span = f32::from(max.saturating_sub(min)).max(1.0);
+                f32::from(self.byte().saturating_sub(min)) / span
+            }
+            _ => f32::from(self.byte()) / 255.0,
+        }
+    }
+
+    /// The byte for `t` (`0..=1`) of its range.
+    pub fn at(&self, t: f32) -> u8 {
+        let (min, max) = match self.control.kind {
+            ViaControlKind::Range { min, max } => (min, max),
+            _ => (0, 255),
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let step = (t.clamp(0.0, 1.0) * f32::from(max.saturating_sub(min))).round() as u8;
+        min + step
+    }
+
     pub fn byte(&self) -> u8 {
         self.value.first().copied().unwrap_or(0)
     }
@@ -432,6 +507,39 @@ fn set(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menus_sort_into_roles() {
+        let def = via_definition(
+            r#"{"name":"T","vendorId":"0x1","productId":"0x2","matrix":{"rows":1,"cols":1},
+                "layouts":{"keymap":[["0,0"]]},"menus":["qmk_backlight_rgblight"]}"#,
+        )
+        .unwrap();
+        let settings: Vec<ViaSetting> = def
+            .controls
+            .into_iter()
+            .map(|control| ViaSetting {
+                control,
+                value: vec![0, 0],
+            })
+            .collect();
+        let g = groups(&settings);
+        assert_eq!(g.len(), 2);
+        assert_eq!(
+            (g[0].name.as_str(), g[0].brightness, g[0].effect),
+            ("Backlight", Some(0), Some(1))
+        );
+        assert_eq!(g[0].color, None);
+        let under = &g[1];
+        assert_eq!(under.name, "Underglow");
+        assert_eq!(
+            (under.brightness, under.effect, under.speed, under.color),
+            (Some(2), Some(3), Some(4), Some(5))
+        );
+        let mut s = settings[2].clone();
+        s.value = vec![s.at(0.5)];
+        assert!((s.fraction() - 0.5).abs() < 0.01);
+    }
 
     #[test]
     fn macros_read_and_write() {

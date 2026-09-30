@@ -1,20 +1,28 @@
-//! The lighting page for a keyboard that speaks only VIA: the settings
-//! its definition's menus offer, one card per menu section.
+//! The lighting page for a keyboard that speaks only VIA. It is the Lykil
+//! lighting page with VIA's values in it: the keyboard in the chosen
+//! colour, the effects as cards, the colour square and the sliders. A
+//! definition with more than one section (backlight and underglow) gets a
+//! switch between them.
 
 use aurea::AureaResult;
+use lykil::lighting::{Effect, Hsv, Settings};
 use lykil_qmk::import::ViaControlKind;
 
 use crate::app::{Hit, Shared};
-use crate::devices::via::ViaSetting;
-use crate::draw::Hits;
-use crate::draw::{Area, Pen, color};
-use crate::widgets::colour::hue_bar;
-use crate::widgets::{self, segmented, slider};
+use crate::devices::via::{ViaGroup, ViaSetting, groups};
+use crate::draw::{Area, Hits, Pen, color};
+use crate::keyboard::{self, Keys, Presses};
+use crate::pages::lighting::{panels, points};
+use crate::widgets::colour::square_and_bar;
+use crate::widgets::effects::{EffectCard, effect_grid};
+use crate::widgets::{self, Track, segmented};
 
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
     let lang = pen.lang;
-    let settings = &shared.keyboard.via_settings;
-    if settings.is_empty() {
+    let kb = &shared.keyboard;
+    let settings = &kb.via_settings;
+    let all = groups(settings);
+    let Some(group) = all.get(shared.ui.via_group.min(all.len().saturating_sub(1))) else {
         pen.centred(
             lang.tr("This keyboard's VIA definition has no lighting menu"),
             body,
@@ -22,63 +30,245 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
             color::DIM,
         )?;
         return Ok(String::new());
+    };
+    let get = |i: Option<usize>| i.and_then(|i| settings.get(i));
+    let look = look(group, settings);
+
+    let points = kb
+        .description
+        .as_ref()
+        .map(|d| points(d, false))
+        .unwrap_or_default();
+    let presses = Presses {
+        at: &[],
+        recent: Vec::new(),
+        heat: Vec::new(),
+    };
+    let kb_area = Area::new(body.x, body.y + pen.s(4.0), body.w, body.h * 0.44);
+    let used = keyboard::keyboard(
+        pen,
+        kb_area,
+        kb,
+        &Keys::Lighting {
+            settings: look,
+            time: pen.anim.time(),
+            colors: &[],
+            points: &points,
+            presses: &presses,
+            brush: None,
+        },
+        true,
+        hits,
+    )?;
+    let line = Area::new(body.x, used.bottom() + pen.s(10.0), body.w, pen.s(18.0));
+    pen.circle(
+        line.x + pen.s(8.0),
+        line.y + line.h / 2.0,
+        pen.s(4.0),
+        color::GOOD,
+    )?;
+    pen.fitted_left(
+        lang.tr("The keyboard runs this effect. The picture shows its colour, VIA effects are not played here."),
+        Area::new(line.x + pen.s(20.0), line.y, line.w - pen.s(24.0), line.h),
+        12.0,
+        8.0,
+        color::DIM,
+    )?;
+
+    let top = line.bottom() + pen.s(10.0);
+    let rest = Area::new(body.x, top, body.w, body.bottom() - top);
+    let (effects, picker, side) = panels(pen, rest, pen.s(16.0));
+    for a in [effects, picker, side] {
+        pen.round(a, pen.s(12.0), color::SURFACE)?;
     }
-    let mut groups: Vec<&str> = Vec::new();
-    for s in settings {
-        if !groups.contains(&s.control.group.as_str()) {
-            groups.push(&s.control.group);
-        }
-    }
-    let gap = pen.s(16.0);
-    let columns = groups.len().clamp(1, 3);
-    #[allow(clippy::cast_precision_loss)]
-    let w = (body.w - gap * (columns - 1) as f32) / columns as f32;
-    let top = body.y + pen.s(8.0);
-    for (i, group) in groups.iter().enumerate() {
-        #[allow(clippy::cast_precision_loss)]
-        let card = Area::new(
-            body.x + (w + gap) * (i % columns) as f32,
-            top,
-            w,
-            body.bottom() - top,
-        );
-        pen.round(card, pen.s(12.0), color::SURFACE)?;
-        let inner = card.inset(pen.s(16.0));
-        let title = if group.is_empty() {
-            lang.tr("Lighting")
-        } else {
-            group
-        };
-        pen.text(title, inner.x, inner.y, &pen.bold(15.0), color::TEXT)?;
-        let mut y = inner.y + pen.s(34.0);
-        for (index, s) in settings.iter().enumerate() {
-            if s.control.group != *group {
-                continue;
-            }
-            let area = Area::new(inner.x, y, inner.w, inner.bottom() - y);
-            y += control(pen, area, (index, s), shared, hits)? + pen.s(18.0);
-        }
-    }
+    effect_cards(pen, effects.inset(pen.s(16.0)), (group, settings), hits)?;
+    picker_card(
+        pen,
+        picker.inset(pen.s(16.0)),
+        look.color,
+        (get(group.color), group.color),
+        hits,
+    )?;
+    side_card(pen, side.inset(pen.s(16.0)), (&all, group), shared, hits)?;
     Ok(lang
         .tr("VIA settings from the keyboard's definition. Saved on the keyboard when you let go.")
         .into())
 }
 
-/// Draws one setting at the top of `area`; returns the height it took.
-fn control(
+/// What the preview shows: the section's colour at its brightness, dark
+/// when its effect is off.
+fn look(group: &ViaGroup, settings: &[ViaSetting]) -> Settings {
+    let get = |i: Option<usize>| i.and_then(|i| settings.get(i));
+    let (h, s) =
+        get(group.color).map_or((0, 0), |c| (c.byte(), c.value.get(1).copied().unwrap_or(0)));
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let v = get(group.brightness).map_or(255, |b| (b.fraction() * 255.0).round() as u8);
+    let off = get(group.effect).is_some_and(|e| e.byte() == 0);
+    Settings {
+        effect: if off { Effect::Off } else { Effect::Solid },
+        color: Hsv::new(h, s, v),
+        ..Settings::DEFAULT
+    }
+}
+
+fn effect_cards(
+    pen: &mut Pen<'_>,
+    area: Area,
+    (group, settings): (&ViaGroup, &[ViaSetting]),
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    widgets::label(pen, lang.tr("EFFECT"), area.x, area.y)?;
+    let grid = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h - pen.s(20.0));
+    let Some((index, setting)) = group.effect.and_then(|i| Some((i, settings.get(i)?))) else {
+        pen.fitted_left(
+            lang.tr("This section has no effects to pick"),
+            Area::new(grid.x, grid.y, grid.w, pen.s(16.0)),
+            11.0,
+            8.0,
+            color::FAINT,
+        )?;
+        return Ok(());
+    };
+    let ViaControlKind::Dropdown(options) = &setting.control.kind else {
+        return Ok(());
+    };
+    let cards: Vec<EffectCard<'_>> = options
+        .iter()
+        .map(|(name, value)| EffectCard {
+            name,
+            about: "",
+            hit: Hit::ViaOption(index, *value),
+            active: *value == setting.byte(),
+        })
+        .collect();
+    effect_grid(pen, grid, &cards, &mut |_, _, _| Ok(()), hits)
+}
+
+fn picker_card(
+    pen: &mut Pen<'_>,
+    area: Area,
+    c: Hsv,
+    (colour, index): (Option<&ViaSetting>, Option<usize>),
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    widgets::label(pen, lang.tr("COLOUR"), area.x, area.y)?;
+    let (Some(_), Some(index)) = (colour, index) else {
+        pen.fitted_left(
+            lang.tr("This section has no colour setting"),
+            Area::new(area.x, area.y + pen.s(20.0), area.w, pen.s(16.0)),
+            11.0,
+            8.0,
+            color::FAINT,
+        )?;
+        return Ok(());
+    };
+    let top = area.y + pen.s(20.0);
+    let side = (area.bottom() - top - pen.s(30.0))
+        .min(pen.s(170.0))
+        .max(pen.s(60.0));
+    let square = Area::new(area.x, top, side, side);
+    square_and_bar(
+        pen,
+        square,
+        c,
+        (Hit::ViaSquare(index), Hit::ViaHue(index)),
+        hits,
+    )
+}
+
+/// The colour each step of a slider's track shows.
+type Shade<'a> = &'a dyn Fn(u8) -> lykil::lighting::Rgb;
+
+/// The section switch, the brightness and speed sliders, and whatever
+/// else the section has.
+fn side_card(
+    pen: &mut Pen<'_>,
+    area: Area,
+    (all, group): (&[ViaGroup], &ViaGroup),
+    shared: &Shared,
+    hits: &mut Hits,
+) -> AureaResult<()> {
+    let lang = pen.lang;
+    let settings = &shared.keyboard.via_settings;
+    let mut y = area.y;
+    if all.len() > 1 {
+        let names: Vec<(&str, Hit)> = all
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (g.name.as_str(), Hit::ViaGroup(i)))
+            .collect();
+        let chosen = all.iter().position(|g| g == group).unwrap_or(0);
+        segmented(
+            pen,
+            Area::new(area.x, y, area.w, pen.s(30.0)),
+            (&names, 5000),
+            chosen,
+            hits,
+        )?;
+        y += pen.s(44.0);
+    }
+    let hue = group
+        .color
+        .and_then(|i| settings.get(i))
+        .map_or((0, 0), |c| (c.byte(), c.value.get(1).copied().unwrap_or(0)));
+    let bright = |v: u8| Hsv::new(hue.0, hue.1, v).to_rgb();
+    let grey = |v: u8| Hsv::new(0, 0, 60 + v / 3).to_rgb();
+    let named: [(Option<usize>, &str, Shade<'_>); 2] = [
+        (group.brightness, "BRIGHTNESS", &bright),
+        (group.speed, "SPEED", &grey),
+    ];
+    for (index, name, shade) in named {
+        let Some((i, s)) = index.and_then(|i| Some((i, settings.get(i)?))) else {
+            continue;
+        };
+        let t = s.fraction();
+        let row = Area::new(area.x, y, area.w, pen.s(36.0));
+        widgets::slider(
+            pen,
+            row,
+            (lang.tr(name), &widgets::percent(t)),
+            (t, Hit::ViaRange(i), Track::Shades(shade)),
+            shared,
+            hits,
+        )?;
+        y += pen.s(44.0);
+    }
+    for &i in &group.other {
+        let Some(s) = settings.get(i) else {
+            continue;
+        };
+        let row = Area::new(area.x, y, area.w, area.bottom() - y);
+        y += other(pen, row, (i, s), shared, hits)? + pen.s(12.0);
+    }
+    Ok(())
+}
+
+/// A setting that is not brightness, effect, speed or colour, drawn by its
+/// kind. Returns the height it took.
+fn other(
     pen: &mut Pen<'_>,
     area: Area,
     (index, s): (usize, &ViaSetting),
     shared: &Shared,
     hits: &mut Hits,
 ) -> AureaResult<f32> {
+    let lang = pen.lang;
     let label = s.control.label.to_uppercase();
     match &s.control.kind {
-        ViaControlKind::Range { min, max } => {
-            let span = f32::from(max.saturating_sub(*min)).max(1.0);
-            let t = f32::from(s.byte().saturating_sub(*min)) / span;
-            slider(pen, area, &label, t, Hit::ViaRange(index), shared, hits)?;
-            Ok(pen.s(34.0))
+        ViaControlKind::Range { .. } => {
+            let t = s.fraction();
+            let row = Area::new(area.x, area.y, area.w, pen.s(36.0));
+            widgets::slider(
+                pen,
+                row,
+                (&label, &widgets::percent(t)),
+                (t, Hit::ViaRange(index), Track::Plain),
+                shared,
+                hits,
+            )?;
+            Ok(pen.s(36.0))
         }
         ViaControlKind::Toggle => {
             widgets::label(pen, &label, area.x, area.y)?;
@@ -88,7 +278,6 @@ fn control(
                 area.w.min(pen.s(220.0)),
                 pen.s(30.0),
             );
-            let lang = pen.lang;
             let items = [
                 (lang.tr("Off"), Hit::ViaToggle(index, false)),
                 (lang.tr("On"), Hit::ViaToggle(index, true)),
@@ -102,31 +291,23 @@ fn control(
             )?;
             Ok(pen.s(48.0))
         }
-        ViaControlKind::Color => {
-            widgets::label(pen, &label, area.x, area.y)?;
-            let (h, sat) = (s.byte(), s.value.get(1).copied().unwrap_or(255));
-            let bar = Area::new(area.x, area.y + pen.s(22.0), area.w, pen.s(14.0));
-            hue_bar(pen, bar, h, Hit::ViaHue(index), hits)?;
-            let row = Area::new(area.x, bar.bottom() + pen.s(14.0), area.w, area.h);
-            let t = f32::from(sat) / 255.0;
-            slider(pen, row, "SATURATION", t, Hit::ViaSat(index), shared, hits)?;
-            Ok(pen.s(84.0))
-        }
         ViaControlKind::Dropdown(options) => {
             widgets::label(pen, &label, area.x, area.y)?;
-            let chosen = s.byte();
             let items: Vec<(String, Hit, bool)> = options
                 .iter()
                 .map(|(name, value)| {
                     (
                         name.clone(),
                         Hit::ViaOption(index, *value),
-                        *value == chosen,
+                        *value == s.byte(),
                     )
                 })
                 .collect();
             let flow = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h);
             Ok(pen.s(20.0) + widgets::chip_flow(pen, flow, &items, hits)?)
         }
+        // A second colour in one section is rare; the first one is in the
+        // picker.
+        ViaControlKind::Color => Ok(0.0),
     }
 }

@@ -346,9 +346,8 @@ fn own_effect(
         widgets::slider(
             pen,
             row,
-            lang.tr("SPEED"),
-            speed,
-            Hit::DeviceSpeed,
+            (lang.tr("SPEED"), &widgets::percent(speed)),
+            (speed, Hit::DeviceSpeed, widgets::Track::Plain),
             shared,
             hits,
         )?;
@@ -378,9 +377,8 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
         widgets::slider(
             pen,
             row,
-            lang.tr("BRIGHTNESS"),
-            level,
-            Hit::DeviceLevel,
+            (lang.tr("BRIGHTNESS"), &widgets::percent(level)),
+            (level, Hit::DeviceLevel, widgets::Track::Plain),
             shared,
             hits,
         )?;
