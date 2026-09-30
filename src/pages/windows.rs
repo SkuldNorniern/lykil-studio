@@ -96,7 +96,8 @@ fn this_keyboard(
     status_line(pen, Area::new(x, y, w * 0.5, pen.s(30.0)), state, tone)?;
     let flip = [(flip.0.to_string(), flip.1, flip.2)];
     pills_to(pen, card.right() - pen.s(24.0), y, &flip, hits)?;
-    Ok(())
+    let room = Area::new(x, y + pen.s(36.0), w, pen.s(14.0));
+    hint(pen, room, lang.tr(crate::pages::lighting::RECONNECTS))
 }
 
 fn other_devices(

@@ -23,6 +23,10 @@ use crate::widgets::segmented::{labelled, segmented};
 use crate::widgets::slider::slider;
 use crate::widgets::status::{overlay, status_line};
 
+/// Said wherever the keyboard can be given to Windows or taken back.
+pub const RECONNECTS: &str =
+    "Switching reconnects the keyboard for about a second, so Windows sees the change.";
+
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
     let lang = pen.lang;
     let Some(settings) = shared.lighting() else {
@@ -94,6 +98,9 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     side_card(pen, side.inset(pen.s(16.0)), shared, settings, hits)?;
 
     let info = kb.lighting;
+    if matches!(shared.ui.hovered(), Some(Hit::OsLighting(_))) {
+        return Ok(lang.tr(RECONNECTS).into());
+    }
     Ok(match info {
         Some(i) if !i.drivers_ok => lang
             .tr("The LED driver chips do not answer; the keyboard keeps trying.")

@@ -389,6 +389,10 @@ const KO: &[(&str, &str)] = &[
         "글자와 조합키를 두 색으로",
     ),
     ("Red and green", "빨강과 초록"),
+    (
+        "Switching reconnects the keyboard for about a second, so Windows sees the change.",
+        "바꾸면 Windows가 알아차리도록 키보드가 1초쯤 다시 연결됩니다.",
+    ),
     ("Colours moving across", "색이 가로질러 움직임"),
     ("Round the colour wheel", "색상환을 따라 돌기"),
     ("A rainbow moving across", "옆으로 흐르는 무지개"),
