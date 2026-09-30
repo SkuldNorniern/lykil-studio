@@ -29,10 +29,10 @@ pub fn folder() -> PathBuf {
     crate::data_dir().join("via")
 }
 
-fn find(ids: (u16, u16)) -> Option<ViaDefinition> {
+fn find(ids: (u16, u16), device: &str) -> Option<ViaDefinition> {
     let dir = folder();
     let _ = std::fs::create_dir_all(&dir);
-    std::fs::read_dir(&dir)
+    let defs: Vec<ViaDefinition> = std::fs::read_dir(&dir)
         .ok()?
         .flatten()
         .filter(|e| {
@@ -41,11 +41,28 @@ fn find(ids: (u16, u16)) -> Option<ViaDefinition> {
                 .is_some_and(|x| x.eq_ignore_ascii_case("json"))
         })
         .filter_map(|e| via_definition(&std::fs::read_to_string(e.path()).ok()?).ok())
-        .find(|d| (d.vendor_id, d.product_id) == ids)
+        .collect();
+    pick(defs, ids, device)
 }
 
-/// The QMK keycode set the keyboard speaks; the newest when it does not
-/// say.
+fn pick(defs: Vec<ViaDefinition>, ids: (u16, u16), device: &str) -> Option<ViaDefinition> {
+    if let Some(i) = defs.iter().position(|d| (d.vendor_id, d.product_id) == ids) {
+        return defs.into_iter().nth(i);
+    }
+    let device = device.to_lowercase();
+    defs.into_iter()
+        .filter(|d| d.vendor_id == ids.0 && names(&d.name, &device))
+        .max_by_key(|d| d.name.len())
+}
+
+fn names(name: &str, device: &str) -> bool {
+    let name = name.trim().to_lowercase();
+    !name.is_empty()
+        && device
+            .strip_prefix(&name)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(|c: char| !c.is_alphanumeric()))
+}
+
 fn abi(bcd: Option<u32>) -> AbiVersion {
     let numbers = |v: AbiVersion| {
         let [major, minor, patch] = v.numbers();
@@ -73,8 +90,6 @@ fn description(def: &ViaDefinition, layers: u8) -> Description {
     }
 }
 
-/// Keycodes (`[layer][row * cols + col]`) as bindings by description
-/// key. A keycode Lykil has no form for reads as no binding.
 fn bindings(codes: &[Vec<u16>], def: &ViaDefinition, abi: AbiVersion) -> Vec<Vec<Binding>> {
     codes
         .iter()
@@ -106,7 +121,7 @@ pub fn poll(
         ids,
     });
     let def = loop {
-        if let Some(def) = find(ids) {
+        if let Some(def) = find(ids, device.name()) {
             break def;
         }
         update(shared, canvas, |k| {
@@ -223,5 +238,28 @@ mod tests {
         assert_eq!(d.keys[0].cell, Some((0, 1)));
         assert_eq!(abi(None), AbiVersion::LATEST);
         assert_eq!(abi(Some(0x0007)), AbiVersion::V0_0_7);
+    }
+
+    #[test]
+    fn a_dongle_takes_its_keyboards_definition_by_name() {
+        let def = |name: &str, product: &str| {
+            via_definition(&format!(
+                r#"{{"name":"{name}","vendorId":"0x36B0","productId":"{product}",
+                    "matrix":{{"rows":1,"cols":1}},"layouts":{{"keymap":[["0,0"]]}}}}"#
+            ))
+            .unwrap()
+        };
+        let defs = || vec![def("EVO", "0x3001"), def("EVO80", "0x300E")];
+        let name = |d: Option<ViaDefinition>| d.map(|d| d.name);
+        assert_eq!(
+            name(pick(defs(), (0x36b0, 0x300e), "x")),
+            Some("EVO80".into())
+        );
+        assert_eq!(
+            name(pick(defs(), (0x36b0, 0x3002), "EVO80 2.4G")),
+            Some("EVO80".into())
+        );
+        assert_eq!(name(pick(defs(), (0x36b0, 0x3002), "EVO800")), None);
+        assert_eq!(name(pick(defs(), (0x1234, 0x3002), "EVO80 2.4G")), None);
     }
 }

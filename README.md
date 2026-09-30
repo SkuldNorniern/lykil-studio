@@ -20,7 +20,7 @@ pages (Ctrl+1 to Ctrl+5, Ctrl+Tab, or the mouse wheel over the tabs):
 
 ## VIA only keyboards
 
-VIA keyboards do not describe themselves, so Studio needs the keyboard's VIA definition: the JSON VIA's Design tab loads. put it in the `via` folder of Studio's data folder: `%APPDATA%\Lykil Studio` on Windows, `~/Library/Application Support/Lykil Studio` on macOS, `~/.config/Lykil Studio` on Linux (the page shows the folder and a button to open it). Studio matches it by USB vendor and product id and picks it up by itself.
+VIA keyboards do not describe themselves, so Studio needs the keyboard's VIA definition: the JSON VIA's Design tab loads. put it in the `via` folder of Studio's data folder: `%APPDATA%\Lykil Studio` on Windows, `~/Library/Application Support/Lykil Studio` on macOS, `~/.config/Lykil Studio` on Linux (the page shows the folder and a button to open it). Studio matches it by USB vendor and product id, else by vendor id and name (so a wireless dongle, `EVO80 2.4G`, takes the `EVO80` definition), and picks it up by itself.
 
 then the keymap page works as usual, over VIA: keycodes are read and written as QMK keycodes and translated with `lykil-qmk`. a binding VIA has no keycode for is refused. lighting and macros stay lykil only.
 
