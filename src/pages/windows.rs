@@ -1,5 +1,7 @@
 //! The Windows lighting page.
 
+use crate::pages::lighting;
+use crate::widgets::effects::{EffectCard, effect_grid};
 use aurea::AureaResult;
 
 use crate::app::{Hit, Shared};
@@ -327,15 +329,29 @@ fn own_effect(
     let Some(own) = d.place.own else {
         return Ok(y - area.y + pen.s(6.0));
     };
-    let chips: Vec<(String, Hit, bool)> = crate::lamps::OWN_EFFECTS
+    // The same cards as the lighting page, running the device's own look.
+    let effects = crate::lamps::OWN_EFFECTS;
+    let cards: Vec<EffectCard<'_>> = effects
         .iter()
-        .map(|e| {
-            let name = lang.tr(crate::pages::lighting::effect_name(*e)).to_string();
-            (name, Hit::DeviceEffect(*e), *e == own.effect)
+        .map(|e| EffectCard {
+            name: lang.tr(lighting::effect_name(*e)),
+            about: "",
+            hit: Hit::DeviceEffect(*e),
+            active: *e == own.effect,
         })
         .collect();
-    y += widgets::chip_flow(pen, Area::new(area.x, y, area.w, area.h), &chips, hits)?;
-    y += pen.s(14.0);
+    let grid = Area::new(area.x, y, area.w, pen.s(130.0));
+    let time = pen.anim.time();
+    effect_grid(
+        pen,
+        grid,
+        &cards,
+        &mut |pen, bar, i| {
+            lighting::effect_strip(pen, bar, own, effects[i], time, &shared.keyboard)
+        },
+        hits,
+    )?;
+    y = grid.bottom() + pen.s(14.0);
     widgets::label(pen, lang.tr("COLOUR"), area.x, y)?;
     let hues = Area::new(area.x, y + pen.s(20.0), area.w, pen.s(12.0));
     widgets::colour::hue_bar(pen, hues, own.color.h, Hit::DeviceHue, hits)?;

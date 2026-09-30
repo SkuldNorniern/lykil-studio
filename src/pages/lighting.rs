@@ -366,7 +366,8 @@ fn effect_cards(
     )
 }
 
-fn effect_strip(
+/// A row of cells running effect `e` with `settings`, for a card.
+pub fn effect_strip(
     pen: &mut Pen<'_>,
     strip: Area,
     settings: Settings,

@@ -38,7 +38,10 @@ pub fn effect_grid(
         let h = (area.h - gap * (rows - 1) as f32) / rows as f32;
         h.min(pen.s(if compact { 30.0 } else { 110.0 }))
     };
-    let mut cols = if compact { 3 } else { 4 };
+    // No more columns than cards about 90 px wide fit, and at least two.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let fit = ((area.w + gap) / (pen.s(90.0) + gap)).floor().max(2.0) as usize;
+    let mut cols = (if compact { 3 } else { 4 }).min(fit);
     while height(cols) < pen.s(24.0) && cols < 6 {
         cols += 1;
     }
