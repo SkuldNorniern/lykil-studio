@@ -102,9 +102,13 @@ fn run() -> aurea::AureaResult<()> {
         }
     });
 
-    // Frames come only while something moves.
+    // Frames come only while something moves. On macOS, Aurea (git
+    // `9c9b58f`) queues a window resize without waking the frame loop, so
+    // an empty frame every quarter second lets it through.
     let ticking = Arc::clone(&shared);
+    let proxy = window.proxy();
     thread::spawn(move || {
+        let mut idle = 0u32;
         loop {
             thread::sleep(FRAME);
             let s = lock(&ticking);
@@ -112,6 +116,11 @@ fn run() -> aurea::AureaResult<()> {
             drop(s);
             if moving {
                 request_canvas_redraw(id);
+            } else if cfg!(target_os = "macos") {
+                idle = (idle + 1) % 16;
+                if idle == 0 {
+                    let _ = proxy.dispatch(|_| {});
+                }
             }
         }
     });
