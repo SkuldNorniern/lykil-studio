@@ -15,6 +15,39 @@ pub fn label(pen: &mut Pen<'_>, text: &str, x: f32, y: f32) -> AureaResult<()> {
     pen.text(text, x, y, &pen.bold(11.0), color::FAINT)
 }
 
+/// Small chips left to right, wrapping inside `area`, the active ones
+/// filled. Returns the height they took.
+pub fn chip_flow(
+    pen: &mut Pen<'_>,
+    area: Area,
+    items: &[(String, Hit, bool)],
+    hits: &mut Hits,
+) -> AureaResult<f32> {
+    let font = pen.font(11.0);
+    let (chip_h, pad, gap) = (pen.s(24.0), pen.s(10.0), pen.s(6.0));
+    let (mut left, mut row) = (area.x, area.y);
+    for (name, hit, on) in items {
+        let chip_w = pen.width(name, &font) + pad * 2.0;
+        if left + chip_w > area.right() && left > area.x {
+            left = area.x;
+            row += chip_h + gap;
+        }
+        let chip = Area::new(left, row, chip_w.min(area.w), chip_h);
+        let t = pen.hover(chip, *hit);
+        let bg = if *on {
+            color::ACCENT
+        } else {
+            color::mix(color::RAISED, color::BORDER, t)
+        };
+        let fg = if *on { color::ACCENT_TEXT } else { color::TEXT };
+        pen.round(chip, chip_h / 2.0, bg)?;
+        pen.centred(name, chip, &font, fg)?;
+        hits.push((chip, *hit));
+        left += chip_w + gap;
+    }
+    Ok(row + chip_h - area.y)
+}
+
 pub fn pills(
     pen: &mut Pen<'_>,
     x: f32,
@@ -215,7 +248,7 @@ pub fn slider(
         track.h / 2.0,
         colour::rgb(Hsv::new(170, 120, 200).to_rgb()),
     )?;
-    let key = Key::ViaKnob(hit);
+    let key = Key::HitKnob(hit);
     if shared.ui.dragging(hit) {
         pen.anim.set(key, t);
     }

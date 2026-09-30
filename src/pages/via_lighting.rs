@@ -115,31 +115,18 @@ fn control(
         ViaControlKind::Dropdown(options) => {
             widgets::label(pen, &label, area.x, area.y)?;
             let chosen = s.byte();
-            let font = pen.font(11.0);
-            let (chip_h, pad, gap) = (pen.s(24.0), pen.s(10.0), pen.s(6.0));
-            let (mut left, mut row) = (area.x, area.y + pen.s(20.0));
-            for (name, value) in options {
-                let chip_w = pen.width(name, &font) + pad * 2.0;
-                if left + chip_w > area.right() && left > area.x {
-                    left = area.x;
-                    row += chip_h + gap;
-                }
-                let chip = Area::new(left, row, chip_w.min(area.w), chip_h);
-                let hit = Hit::ViaOption(index, *value);
-                let t = pen.hover(chip, hit);
-                let on = *value == chosen;
-                let bg = if on {
-                    color::ACCENT
-                } else {
-                    color::mix(color::RAISED, color::BORDER, t)
-                };
-                let fg = if on { color::ACCENT_TEXT } else { color::TEXT };
-                pen.round(chip, chip_h / 2.0, bg)?;
-                pen.centred(name, chip, &font, fg)?;
-                hits.push((chip, hit));
-                left += chip_w + gap;
-            }
-            Ok(row + chip_h - area.y)
+            let items: Vec<(String, Hit, bool)> = options
+                .iter()
+                .map(|(name, value)| {
+                    (
+                        name.clone(),
+                        Hit::ViaOption(index, *value),
+                        *value == chosen,
+                    )
+                })
+                .collect();
+            let flow = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h);
+            Ok(pen.s(20.0) + widgets::chip_flow(pen, flow, &items, hits)?)
         }
     }
 }
