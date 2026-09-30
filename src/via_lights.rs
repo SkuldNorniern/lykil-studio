@@ -2,15 +2,14 @@
 //! its definition's menus offer, one card per menu section.
 
 use aurea::AureaResult;
-use lykil::lighting::Hsv;
 use lykil_qmk::import::ViaControlKind;
 
-use crate::anim::{Key, rate};
 use crate::app::{Hit, Shared};
+use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
-use crate::lights::{hue_bar, rgb, segmented};
 use crate::via::ViaSetting;
-use crate::view::{self, Hits};
+use crate::widgets::colour::hue_bar;
+use crate::widgets::{self, segmented, slider};
 
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
     let lang = pen.lang;
@@ -82,7 +81,7 @@ fn control(
             Ok(pen.s(34.0))
         }
         ViaControlKind::Toggle => {
-            view::label(pen, &label, area.x, area.y)?;
+            widgets::label(pen, &label, area.x, area.y)?;
             let bar = Area::new(
                 area.x,
                 area.y + pen.s(18.0),
@@ -104,7 +103,7 @@ fn control(
             Ok(pen.s(48.0))
         }
         ViaControlKind::Color => {
-            view::label(pen, &label, area.x, area.y)?;
+            widgets::label(pen, &label, area.x, area.y)?;
             let (h, sat) = (s.byte(), s.value.get(1).copied().unwrap_or(255));
             let bar = Area::new(area.x, area.y + pen.s(22.0), area.w, pen.s(14.0));
             hue_bar(pen, bar, h, Hit::ViaHue(index), hits)?;
@@ -114,7 +113,7 @@ fn control(
             Ok(pen.s(84.0))
         }
         ViaControlKind::Dropdown(options) => {
-            view::label(pen, &label, area.x, area.y)?;
+            widgets::label(pen, &label, area.x, area.y)?;
             let chosen = s.byte();
             let font = pen.font(11.0);
             let (chip_h, pad, gap) = (pen.s(24.0), pen.s(10.0), pen.s(6.0));
@@ -143,49 +142,4 @@ fn control(
             Ok(row + chip_h - area.y)
         }
     }
-}
-
-/// A track with a knob at `t` (`0..=1`) and the percentage on the right.
-fn slider(
-    pen: &mut Pen<'_>,
-    area: Area,
-    label: &str,
-    t: f32,
-    hit: Hit,
-    shared: &Shared,
-    hits: &mut Hits,
-) -> AureaResult<()> {
-    view::label(pen, label, area.x, area.y)?;
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let pct = format!("{}%", (t * 100.0).round() as u32);
-    let font = pen.font(11.0);
-    let vw = pen.width(&pct, &font);
-    pen.text(&pct, area.right() - vw, area.y, &font, color::DIM)?;
-    let track = Area::new(area.x, area.y + pen.s(20.0), area.w, pen.s(10.0));
-    pen.round(track, track.h / 2.0, color::RAISED)?;
-    let filled = Area::new(track.x, track.y, track.w * t, track.h);
-    pen.round(filled, track.h / 2.0, rgb(Hsv::new(170, 120, 200).to_rgb()))?;
-    let key = Key::ViaKnob(hit);
-    if shared.ui.dragging(hit) {
-        pen.anim.set(key, t);
-    }
-    let v = pen.anim.to(key, t, rate::KNOB);
-    let grab = Area::new(
-        track.x - pen.s(8.0),
-        track.y - pen.s(10.0),
-        track.w + pen.s(16.0),
-        track.h + pen.s(20.0),
-    );
-    let hover = pen.hover(grab, hit);
-    let knob = track.x + track.w * v;
-    let r = pen.s(8.0) + pen.s(2.0) * hover;
-    pen.circle(knob, track.y + track.h / 2.0, r, color::TEXT)?;
-    pen.circle(
-        knob,
-        track.y + track.h / 2.0,
-        r - pen.s(3.0),
-        color::BACKGROUND,
-    )?;
-    hits.push((grab, hit));
-    Ok(())
 }

@@ -3,26 +3,24 @@
 use aurea::AureaResult;
 use aurea::render::{Color, DrawingContext};
 use lykil::binding::Binding;
-use lykil::lighting::{Effect, Point, Rgb, Settings};
 use lykil_protocol::describe::Description;
 use lykil_protocol::lcp;
 
 use crate::anim::{self, Key, rate};
 use crate::app::{Hit, Shared, Tab};
 use crate::device::{Connection, Keyboard};
+use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
 use crate::edit::{self, Hold};
+use crate::keyboard::{self, Keys};
 use crate::legend;
-use crate::lights::{self, Presses};
+use crate::lights;
+use crate::widgets::{chip, label, pills, text_field};
 use crate::{icons, windows};
 
 const HEADER: f32 = 60.0;
 const FOOTER: f32 = 30.0;
 const MARGIN: f32 = 24.0;
-const MAX_UNIT: f32 = 58.0;
-
-pub type Hits = Vec<(Area, Hit)>;
-
 pub fn draw(ctx: &mut dyn DrawingContext, shared: &mut Shared) -> AureaResult<()> {
     #[allow(clippy::cast_precision_loss)]
     let (w, h) = (ctx.width() as f32, ctx.height() as f32);
@@ -411,267 +409,6 @@ fn needs_definition(
     Ok(())
 }
 
-pub enum Keys<'a> {
-    Keymap {
-        bindings: &'a [Binding],
-        layers: &'a [String],
-        selected: Option<usize>,
-    },
-    /// The lighting preview at `time` seconds; `colors` are the per-key
-    /// colours by LED, `points` each key's place for the effects, `brush`
-    /// the per-key brush shown on the key under the mouse.
-    Lighting {
-        settings: Settings,
-        time: f32,
-        colors: &'a [Rgb],
-        points: &'a [Option<Point>],
-        presses: &'a Presses<'a>,
-        brush: Option<Rgb>,
-    },
-    /// The key test: what each key does on the first layer, or its id.
-    Device {
-        bindings: &'a [Binding],
-        layers: &'a [String],
-    },
-}
-
-pub fn keyboard(
-    pen: &mut Pen<'_>,
-    area: Area,
-    kb: &Keyboard,
-    keys: &Keys<'_>,
-    hover_keys: bool,
-    hits: &mut Hits,
-) -> AureaResult<Area> {
-    let Some(desc) = &kb.description else {
-        return Ok(Area::default());
-    };
-    let Some((x0, y0, x1, y1)) = bounds(desc) else {
-        return Ok(Area::default());
-    };
-    #[allow(clippy::cast_possible_truncation)]
-    let (units_w, units_h) = ((x1 - x0) as f32, (y1 - y0) as f32);
-    let unit = (area.w / units_w)
-        .min(area.h / units_h)
-        .min(pen.s(MAX_UNIT));
-    let used = Area::new(
-        area.x + (area.w - unit * units_w) / 2.0,
-        area.y,
-        unit * units_w,
-        unit * units_h,
-    );
-    let gap = (unit * 0.08).max(2.0);
-    for (i, key) in desc.keys.iter().enumerate() {
-        let Some([x, y, kw, kh]) = key.geometry else {
-            continue;
-        };
-        #[allow(clippy::cast_possible_truncation)]
-        let cap = Area::new(
-            used.x + (x - x0) as f32 * unit + gap / 2.0,
-            used.y + (y - y0) as f32 * unit + gap / 2.0,
-            kw as f32 * unit - gap,
-            kh as f32 * unit - gap,
-        );
-        #[allow(clippy::cast_possible_truncation)]
-        let info = Cap {
-            index: i,
-            id: &key.id,
-            led: key.led,
-            down: key.cell.is_some_and(|c| kb.closed(c)),
-            hovered: if hover_keys {
-                pen.hover(cap, Hit::Key(i))
-            } else {
-                0.0
-            },
-        };
-        keycap(pen, cap, &info, keys)?;
-        if hover_keys {
-            hits.push((cap, Hit::Key(i)));
-        }
-    }
-    Ok(used)
-}
-
-struct Cap<'a> {
-    index: usize,
-    id: &'a str,
-    led: Option<u16>,
-    down: bool,
-    hovered: f32,
-}
-
-fn keycap(pen: &mut Pen<'_>, cap: Area, info: &Cap<'_>, keys: &Keys<'_>) -> AureaResult<()> {
-    let Cap {
-        index,
-        id,
-        led: _,
-        down,
-        hovered,
-    } = *info;
-    let radius = pen.s(6.0);
-    let (face, selected) = match keys {
-        Keys::Lighting { .. } => (lit_face(info, keys), false),
-        Keys::Keymap { selected, .. } => (
-            color::mix(color::RAISED, color::HOVER, hovered),
-            *selected == Some(index),
-        ),
-        Keys::Device { .. } => (color::RAISED, false),
-    };
-    let glow = pen.anim.towards(
-        Key::Down(index),
-        if down { 1.0 } else { 0.0 },
-        rate::PRESS,
-        rate::RELEASE,
-    );
-    let face = if matches!(keys, Keys::Device { .. }) {
-        color::mix(face, color::PRESSED, glow * 0.55)
-    } else {
-        face
-    };
-    let sink = pen.s(1.5) * glow;
-    let cap = Area::new(cap.x, cap.y + sink, cap.w, cap.h - sink);
-    pen.round(cap, radius, color::mix(face, color::BACKGROUND, 0.45))?;
-    let top = Area::new(
-        cap.x + pen.s(2.0),
-        cap.y + pen.s(1.0),
-        cap.w - pen.s(4.0),
-        cap.h - pen.s(5.0) + sink,
-    );
-    pen.round(top, radius * 0.8, face)?;
-    if glow > 0.01 {
-        pen.outline(
-            cap,
-            radius,
-            pen.s(2.0),
-            color::mix(face, color::PRESSED, glow),
-        )?;
-    }
-    let sel = pen.anim.to(
-        Key::Selected(index),
-        if selected { 1.0 } else { 0.0 },
-        rate::HOVER,
-    );
-    if sel > 0.01 {
-        pen.outline(
-            cap,
-            radius,
-            pen.s(1.0) + pen.s(1.5) * sel,
-            color::mix(face, color::ACCENT, sel),
-        )?;
-    }
-    let label = top.inset(pen.s(3.0));
-    match keys {
-        Keys::Keymap {
-            bindings, layers, ..
-        } => {
-            let binding = bindings.get(index).copied().unwrap_or_default();
-            let (main, sub) = legend::keycap(binding, layers);
-            let c = if binding == Binding::Transparent {
-                color::FAINT
-            } else {
-                color::TEXT
-            };
-            match sub {
-                Some(sub) => {
-                    let upper = Area::new(label.x, label.y, label.w, label.h * 0.62);
-                    let lower =
-                        Area::new(label.x, label.y + label.h * 0.58, label.w, label.h * 0.38);
-                    pen.fitted(&main, upper, 12.0, 7.0, c)?;
-                    pen.fitted(&sub, lower, 9.0, 6.0, color::ACCENT)
-                }
-                None => pen.fitted(&main, label, 12.0, 7.0, c),
-            }
-        }
-        Keys::Device { bindings, layers } => {
-            let main = bindings
-                .get(index)
-                .map(|b| legend::keycap(*b, layers).0)
-                .filter(|m| !m.is_empty())
-                .unwrap_or_else(|| id.to_string());
-            pen.fitted(&main, label, 11.0, 6.0, color::DIM)
-        }
-        Keys::Lighting { .. } => Ok(()),
-    }
-}
-
-fn lit_face(info: &Cap<'_>, keys: &Keys<'_>) -> Color {
-    let Keys::Lighting {
-        settings,
-        time,
-        colors,
-        points,
-        presses,
-        brush,
-    } = keys
-    else {
-        return color::RAISED;
-    };
-    let lit = if settings.effect == Effect::PerKey {
-        info.led
-            .and_then(|l| colors.get(usize::from(l)).copied())
-            .unwrap_or(Rgb::OFF)
-            .scale(settings.color.v)
-    } else {
-        points
-            .get(info.index)
-            .copied()
-            .flatten()
-            .map_or(Rgb::OFF, |p| {
-                lights::preview(*settings, p, info.index, *time, presses, points)
-            })
-    };
-    // A dark LED leaves the cap visible; light adds to it.
-    let face = color::glow(color::SURFACE, lights::rgb(lit));
-    match brush {
-        Some(b) if info.led.is_some() => color::mix(face, lights::rgb(*b), info.hovered * 0.6),
-        _ => color::mix(face, color::TEXT, info.hovered * 0.15),
-    }
-}
-
-fn bounds(desc: &Description) -> Option<(f64, f64, f64, f64)> {
-    let mut b: Option<(f64, f64, f64, f64)> = None;
-    for [x, y, w, h] in desc.keys.iter().filter_map(|k| k.geometry) {
-        let (l, t, r, bo) = b.unwrap_or((x, y, x + w, y + h));
-        b = Some((l.min(x), t.min(y), r.max(x + w), bo.max(y + h)));
-    }
-    b
-}
-
-pub fn pills(
-    pen: &mut Pen<'_>,
-    x: f32,
-    y: f32,
-    items: &[(String, Hit, bool)],
-    hits: &mut Hits,
-) -> AureaResult<f32> {
-    let font = pen.bold(12.0);
-    let mut x = x;
-    for (label, hit, active) in items {
-        let w = pen.width(label, &font) + pen.s(24.0);
-        let a = Area::new(x, y, w, pen.s(30.0));
-        let hover = pen.hover(a, *hit);
-        let bg = if *active {
-            color::ACCENT
-        } else {
-            color::mix(color::RAISED, color::HOVER, hover)
-        };
-        pen.round(a, pen.s(15.0), bg)?;
-        let fg = if *active {
-            color::ACCENT_TEXT
-        } else {
-            color::TEXT
-        };
-        pen.centred(label, a, &font, fg)?;
-        hits.push((a, *hit));
-        x += w + pen.s(8.0);
-    }
-    Ok(x)
-}
-
-pub fn label(pen: &mut Pen<'_>, text: &str, x: f32, y: f32) -> AureaResult<()> {
-    pen.text(text, x, y, &pen.bold(11.0), color::FAINT)
-}
-
 fn keymap_tab(
     pen: &mut Pen<'_>,
     body: Area,
@@ -687,7 +424,7 @@ fn keymap_tab(
     let empty = Vec::new();
     let bindings = kb.keymap.get(usize::from(ui.layer)).unwrap_or(&empty);
     let kb_area = Area::new(body.x, body.y + pen.s(48.0), body.w, body.h * 0.46);
-    let used = keyboard(
+    let used = keyboard::keyboard(
         pen,
         kb_area,
         kb,
@@ -975,51 +712,6 @@ fn layer_bar(
     Ok(())
 }
 
-fn chip(
-    pen: &mut Pen<'_>,
-    (a, hit): (Area, Hit),
-    main: &str,
-    sub: Option<&str>,
-    selected: bool,
-) -> AureaResult<()> {
-    let t = pen.hover(a, hit);
-    let face = if selected {
-        color::ACCENT
-    } else {
-        color::mix(color::RAISED, color::HOVER, t)
-    };
-    let a = Area::new(a.x, a.y - pen.s(1.5) * t, a.w, a.h);
-    pen.round(a, pen.s(7.0), color::mix(face, color::BACKGROUND, 0.45))?;
-    let top = Area::new(
-        a.x + pen.s(2.0),
-        a.y + pen.s(1.0),
-        a.w - pen.s(4.0),
-        a.h - pen.s(5.0),
-    );
-    pen.round(top, pen.s(6.0), face)?;
-    let fg = if selected {
-        color::ACCENT_TEXT
-    } else {
-        color::TEXT
-    };
-    let inner = top.inset(pen.s(3.0));
-    match sub {
-        Some(sub) => {
-            let upper = Area::new(inner.x, inner.y, inner.w, inner.h * 0.62);
-            let lower = Area::new(inner.x, inner.y + inner.h * 0.58, inner.w, inner.h * 0.38);
-            pen.fitted(main, upper, 12.0, 7.0, fg)?;
-            pen.fitted(
-                sub,
-                lower,
-                9.0,
-                6.0,
-                if selected { fg } else { color::ACCENT },
-            )
-        }
-        None => pen.fitted(main, inner, 12.0, 7.0, fg),
-    }
-}
-
 /// `holds` says which bindings the keyboard can take; the rest are Lykil
 /// only and show dimmed.
 fn palette(
@@ -1242,54 +934,6 @@ fn macro_buttons(
     Ok(())
 }
 
-/// `text` split at its line breaks and wherever a line would run past
-/// `room`.
-fn wrap(pen: &mut Pen<'_>, text: &str, font: &aurea::render::Font, room: f32) -> Vec<String> {
-    let mut out = Vec::new();
-    for line in text.split('\n') {
-        let mut current = String::new();
-        for ch in line.chars() {
-            current.push(ch);
-            if pen.width(&current, font) > room && current.chars().count() > 1 {
-                current.pop();
-                out.push(std::mem::take(&mut current));
-                current.push(ch);
-            }
-        }
-        out.push(current);
-    }
-    out
-}
-
-fn text_field(pen: &mut Pen<'_>, field: Area, text: &str, editing: bool) -> AureaResult<()> {
-    let lang = pen.lang;
-    let font = pen.font(15.0);
-    let mut ty = field.y + pen.s(12.0);
-    let shown = if editing {
-        format!("{text}|")
-    } else {
-        text.to_string()
-    };
-    let room = field.w - pen.s(24.0);
-    for line in wrap(pen, &shown, &font, room) {
-        if ty > field.bottom() - pen.s(20.0) {
-            break;
-        }
-        pen.text(&line, field.x + pen.s(12.0), ty, &font, color::TEXT)?;
-        ty += pen.s(22.0);
-    }
-    if text.is_empty() && !editing {
-        pen.text(
-            lang.tr("Start typing: this macro will type the same text."),
-            field.x + pen.s(12.0),
-            field.y + pen.s(12.0),
-            &font,
-            color::FAINT,
-        )?;
-    }
-    Ok(())
-}
-
 fn macro_note(pen: &mut Pen<'_>, editor: Area, id: usize) -> AureaResult<()> {
     let lang = pen.lang;
     let note = Area::new(
@@ -1420,7 +1064,7 @@ fn device_tab(
         bindings: kb.keymap.first().unwrap_or(&empty),
         layers: &layers,
     };
-    let used = keyboard(pen, kb_area, kb, &keys, false, hits)?;
+    let used = keyboard::keyboard(pen, kb_area, kb, &keys, false, hits)?;
     let mut cards: Vec<(&str, String)> = Vec::new();
     if let Some(h) = kb.hello {
         cards.push((

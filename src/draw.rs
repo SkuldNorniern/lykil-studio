@@ -235,3 +235,5 @@ fn rounded(a: Area, radius: f32) -> Path {
     ];
     path
 }
+
+pub type Hits = Vec<(Area, Hit)>;

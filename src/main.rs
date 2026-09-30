@@ -8,6 +8,7 @@ mod device;
 mod draw;
 mod edit;
 mod icons;
+mod keyboard;
 mod lamps;
 mod lang;
 mod legend;
@@ -15,6 +16,7 @@ mod lights;
 mod via;
 mod via_lights;
 mod view;
+mod widgets;
 mod windows;
 
 use std::path::PathBuf;

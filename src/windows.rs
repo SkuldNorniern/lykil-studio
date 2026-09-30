@@ -4,8 +4,9 @@ use aurea::AureaResult;
 
 use crate::app::{Hit, Shared};
 use crate::device::Connection;
+use crate::draw::Hits;
 use crate::draw::{Area, Pen, color};
-use crate::view::{self, Hits};
+use crate::widgets;
 
 pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> AureaResult<String> {
     let width = pen.s(760.0).min(body.w);
@@ -52,7 +53,7 @@ fn this_keyboard(
         color::DIM,
     )?;
     y += pen.s(34.0);
-    view::label(pen, lang.tr("THIS KEYBOARD"), x, y)?;
+    widgets::label(pen, lang.tr("THIS KEYBOARD"), x, y)?;
     y += pen.s(18.0);
     let connected = shared.keyboard.connection == Connection::Connected;
     let Some(s) = shared.lighting().filter(|_| connected) else {
@@ -97,7 +98,7 @@ fn this_keyboard(
     };
     let font = pen.bold(12.0);
     let bw = pen.width(&flip.0, &font) + pen.s(24.0);
-    view::pills(pen, card.right() - pen.s(24.0) - bw, y, &[flip], hits)?;
+    widgets::pills(pen, card.right() - pen.s(24.0) - bw, y, &[flip], hits)?;
     Ok(())
 }
 
@@ -112,7 +113,7 @@ fn other_devices(
     let x = card.x + pen.s(24.0);
     let w = card.w - pen.s(48.0);
     let mut y = card.y + pen.s(20.0);
-    view::label(pen, lang.tr("OTHER DEVICES"), x, y)?;
+    widgets::label(pen, lang.tr("OTHER DEVICES"), x, y)?;
     let open = [(
         lang.tr("Open Dynamic Lighting settings").to_string(),
         Hit::LightingSettings,
@@ -120,7 +121,7 @@ fn other_devices(
     )];
     let font = pen.bold(12.0);
     let ow = pen.width(&open[0].0, &font) + pen.s(24.0);
-    view::pills(
+    widgets::pills(
         pen,
         card.right() - pen.s(24.0) - ow,
         y - pen.s(6.0),
@@ -140,7 +141,7 @@ fn other_devices(
             shared.lamp_sync,
         ),
     ];
-    view::pills(pen, x, y, &sync, hits)?;
+    widgets::pills(pen, x, y, &sync, hits)?;
     y += pen.s(44.0);
 
     if shared.lamps.is_empty() {
@@ -223,7 +224,7 @@ fn desk(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Aure
                 .as_ref()
                 .filter(|_| d.place.follow)
                 .and_then(|c| c.get(i)?.get(k).copied())
-                .map_or(color::FAINT, crate::lights::rgb);
+                .map_or(color::FAINT, crate::widgets::colour::rgb);
             pen.circle(rect.x + lx * scale, rect.y + ly * scale, dot, c)?;
         }
         // Inside the device, so names never run into a neighbour.
@@ -316,7 +317,7 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
             color::TEXT,
         )?;
         y += pen.s(24.0);
-        view::label(pen, lang.tr("BRIGHTNESS"), area.x, y)?;
+        widgets::label(pen, lang.tr("BRIGHTNESS"), area.x, y)?;
         let pct = format!("{}%", u32::from(d.place.level) * 100 / 255);
         let font = pen.font(11.0);
         let pw = pen.width(&pct, &font);
@@ -385,7 +386,7 @@ fn picked(pen: &mut Pen<'_>, area: Area, shared: &Shared, hits: &mut Hits) -> Au
         let sub = Area::new(name.x, row.y + pen.s(19.0), text_w, pen.s(13.0));
         pen.fitted_left(lang.tr(state), sub, 10.0, 8.0, tone)?;
         let pill = [(text.to_string(), Hit::LampFollow(i), on)];
-        view::pills(pen, row.right() - fw, row.y + pen.s(2.0), &pill, hits)?;
+        widgets::pills(pen, row.right() - fw, row.y + pen.s(2.0), &pill, hits)?;
     }
     Ok(())
 }
