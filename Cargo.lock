@@ -11,7 +11,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "aurea"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/aurea#f104a12a67a3333d39e6a970cf188bf3430b4ab0"
+source = "git+https://github.com/SkuldNorniern/aurea#9c9b58f353bc83e2c8ed448fdfaa4ca9f736f214"
 dependencies = [
  "aurea-animation",
  "aurea-ffi",
@@ -27,12 +27,12 @@ dependencies = [
 [[package]]
 name = "aurea-animation"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/aurea#f104a12a67a3333d39e6a970cf188bf3430b4ab0"
+source = "git+https://github.com/SkuldNorniern/aurea#9c9b58f353bc83e2c8ed448fdfaa4ca9f736f214"
 
 [[package]]
 name = "aurea-ffi"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/aurea#f104a12a67a3333d39e6a970cf188bf3430b4ab0"
+source = "git+https://github.com/SkuldNorniern/aurea#9c9b58f353bc83e2c8ed448fdfaa4ca9f736f214"
 dependencies = [
  "cc",
  "pkg-config",
@@ -41,12 +41,12 @@ dependencies = [
 [[package]]
 name = "aurea-foundation"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/aurea#f104a12a67a3333d39e6a970cf188bf3430b4ab0"
+source = "git+https://github.com/SkuldNorniern/aurea#9c9b58f353bc83e2c8ed448fdfaa4ca9f736f214"
 
 [[package]]
 name = "aurea-render"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/aurea#f104a12a67a3333d39e6a970cf188bf3430b4ab0"
+source = "git+https://github.com/SkuldNorniern/aurea#9c9b58f353bc83e2c8ed448fdfaa4ca9f736f214"
 dependencies = [
  "aurea-foundation",
  "dwrote",
@@ -59,7 +59,7 @@ dependencies = [
 [[package]]
 name = "aurea-runtime"
 version = "0.1.0"
-source = "git+https://github.com/SkuldNorniern/aurea#f104a12a67a3333d39e6a970cf188bf3430b4ab0"
+source = "git+https://github.com/SkuldNorniern/aurea#9c9b58f353bc83e2c8ed448fdfaa4ca9f736f214"
 dependencies = [
  "aurea-foundation",
  "log",
