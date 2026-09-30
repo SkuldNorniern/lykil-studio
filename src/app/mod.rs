@@ -134,6 +134,8 @@ pub enum Hit {
     SaveMacro,
     ClearMacro,
     Effect(Effect),
+    /// An effect the keyboard's firmware does not run: shown, not picked.
+    EffectMissing(Effect),
     Slider(Slider),
     OsLighting(bool),
     /// Saturation across, brightness up.
@@ -704,6 +706,7 @@ mod tests {
             limit: 255,
             host: false,
             drivers_ok: true,
+            effects: lykil::lighting::Effect::ALL_BITS,
         };
         s.keyboard.lighting = Some(keyboard);
         s.ui.draft = Some(Settings {

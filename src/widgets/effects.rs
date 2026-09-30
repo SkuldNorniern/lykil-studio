@@ -6,7 +6,7 @@ use lykil::lighting::{Effect, Rgb, Settings};
 
 use crate::app::Hit;
 use crate::components::led_strip::led_strip;
-use crate::components::surface::choice;
+use crate::components::surface::{choice, dim};
 use crate::draw::{Area, Hits, Pen, color};
 use crate::widgets::pager::pager;
 
@@ -17,6 +17,9 @@ pub struct EffectCard<'a> {
     pub about: &'a str,
     pub hit: Hit,
     pub active: bool,
+    /// The device runs it. Otherwise the card is greyed out and `about`
+    /// should say why.
+    pub runs: bool,
     /// What its strip plays: these settings with this effect.
     pub plays: (Settings, Effect),
 }
@@ -87,6 +90,7 @@ fn effect_card(
     strips: Strips<'_>,
 ) -> AureaResult<()> {
     let fg = choice(pen, a, (card.hit, i), card.active)?;
+    let fg = if card.runs { fg } else { color::FAINT };
     let inner = a.inset(pen.s(10.0));
     let title = Area::new(inner.x, inner.y, inner.w, pen.s(16.0));
     let mut font = pen.bold(13.0);
@@ -101,6 +105,9 @@ fn effect_card(
     let bar = Area::new(inner.x, inner.bottom() - pen.s(12.0), inner.w, pen.s(12.0));
     if bar.y > about.bottom() {
         led_strip(pen, bar, card.plays, strips.time, strips.key_colors)?;
+    }
+    if !card.runs {
+        dim(pen, a)?;
     }
     Ok(())
 }

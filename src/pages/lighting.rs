@@ -98,18 +98,32 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
     picker_card(pen, colours.inset(pen.s(16.0)), shared, hits)?;
     side_card(pen, side.inset(pen.s(16.0)), shared, settings, hits)?;
 
-    let info = kb.lighting;
-    if matches!(shared.ui.hovered(), Some(Hit::OsLighting(_))) {
-        return Ok(lang.tr(RECONNECTS).into());
+    Ok(footer(pen, shared, settings))
+}
+
+/// The line for the footer: what hovering shows, else what the effect
+/// needs.
+fn footer(pen: &Pen<'_>, shared: &Shared, settings: Settings) -> String {
+    let lang = pen.lang;
+    let info = shared.keyboard.lighting;
+    match shared.ui.hovered() {
+        Some(Hit::OsLighting(_)) => return lang.tr(RECONNECTS).into(),
+        Some(Hit::EffectMissing(e)) => {
+            return lang.fill(
+                "This keyboard's firmware does not run {} yet. Update the firmware to use it.",
+                &[lang.tr(effects::name(e))],
+            );
+        }
+        _ => {}
     }
-    Ok(match info {
+    match info {
         Some(i) if !i.drivers_ok => lang
             .tr("The LED driver chips do not answer; the keyboard keeps trying.")
             .into(),
         Some(i) if i.host => lang
             .tr("An app or Windows is setting the colours right now.")
             .into(),
-        _ if brushing => lang
+        _ if settings.effect == Effect::PerKey => lang
             .tr("Click or drag to paint, right click takes a key's colour. Ctrl+C and Ctrl+V copy and paste colours.")
             .into(),
         _ if settings.effect == Effect::Predict => lang
@@ -123,7 +137,7 @@ pub fn tab(pen: &mut Pen<'_>, body: Area, shared: &Shared, hits: &mut Hits) -> A
             &[&i.leds.to_string()],
         ),
         None => String::new(),
-    })
+    }
 }
 
 /// Who drives the LEDs right now, and whether Studio lights other
@@ -190,14 +204,27 @@ fn effect_cards(
     let lang = pen.lang;
     label(pen, lang.tr("EFFECT"), area.x, area.y)?;
     let grid = Area::new(area.x, area.y + pen.s(20.0), area.w, area.h - pen.s(20.0));
+    let info = shared.keyboard.lighting;
     let cards: Vec<EffectCard<'_>> = Effect::ALL
         .into_iter()
-        .map(|e| EffectCard {
-            name: lang.tr(effects::name(e)),
-            about: lang.tr(effects::about(e)),
-            hit: Hit::Effect(e),
-            active: e == settings.effect,
-            plays: (settings, e),
+        .map(|e| {
+            let runs = info.is_none_or(|i| i.runs(e));
+            EffectCard {
+                name: lang.tr(effects::name(e)),
+                about: lang.tr(if runs {
+                    effects::about(e)
+                } else {
+                    "Not on this firmware"
+                }),
+                hit: if runs {
+                    Hit::Effect(e)
+                } else {
+                    Hit::EffectMissing(e)
+                },
+                active: e == settings.effect,
+                runs,
+                plays: (settings, e),
+            }
         })
         .collect();
     let strips = Strips {

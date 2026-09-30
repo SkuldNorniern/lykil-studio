@@ -293,6 +293,7 @@ fn own_effect(
             about: "",
             hit: Hit::DeviceEffect(*e),
             active: *e == own.effect,
+            runs: true,
             plays: (own, *e),
         })
         .collect();

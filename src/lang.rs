@@ -390,6 +390,11 @@ const KO: &[(&str, &str)] = &[
     ),
     ("Red and green", "빨강과 초록"),
     ("Predict", "예측"),
+    ("Not on this firmware", "이 펌웨어에는 없음"),
+    (
+        "This keyboard's firmware does not run {} yet. Update the firmware to use it.",
+        "이 키보드의 펌웨어는 아직 {} 효과를 지원하지 않습니다. 펌웨어를 업데이트하면 쓸 수 있습니다.",
+    ),
     ("Lights the likely next keys", "다음에 칠 키를 밝힘"),
     (
         "It learns which key follows which while it runs, in the keyboard's memory only: gone when it is unplugged. The picture learns from what Studio sees.",

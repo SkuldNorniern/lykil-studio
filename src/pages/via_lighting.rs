@@ -195,6 +195,7 @@ fn effect_cards(
             about: lang.tr(about),
             hit: Hit::ViaOption(index, *value),
             active: *value == setting.byte(),
+            runs: true,
             plays: (look, *e),
         })
         .collect();
