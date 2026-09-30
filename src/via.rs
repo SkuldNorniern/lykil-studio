@@ -1,22 +1,170 @@
 //! Keyboards that speak only VIA, laid out from their VIA definition.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use aurea::render::CanvasId;
 use lykil::binding::Binding;
+use lykil::macros::Step;
 use lykil_device::{DeviceError, ViaDevice};
 use lykil_protocol::describe::{Description, Key};
-use lykil_qmk::import::{ViaDefinition, via_definition};
+use lykil_qmk::import::{ViaControl, ViaControlKind, ViaDefinition, via_definition};
+use lykil_qmk::send_string::{self, Item};
 use lykil_qmk::{AbiVersion, decode, encode, instantiate, project};
 
 use crate::app::Shared;
 use crate::device::{Command, Connection, Keyboard, update};
 
 const RESCAN: Duration = Duration::from_secs(1);
+/// A changed channel is saved once it has been left alone this long:
+/// saving writes EEPROM.
+const SAVE_AFTER: Duration = Duration::from_millis(600);
+
+/// One setting of a VIA keyboard and its bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ViaSetting {
+    pub control: ViaControl,
+    pub value: Vec<u8>,
+}
+
+impl ViaSetting {
+    pub fn byte(&self) -> u8 {
+        self.value.first().copied().unwrap_or(0)
+    }
+}
+
+const fn value_len(kind: &ViaControlKind) -> usize {
+    match kind {
+        ViaControlKind::Color => 2,
+        _ => 1,
+    }
+}
+
+/// The definition's settings the keyboard answers, with their values.
+fn read_settings(device: &mut ViaDevice, def: &ViaDefinition) -> Vec<ViaSetting> {
+    def.controls
+        .iter()
+        .filter_map(|c| {
+            let value = device
+                .custom_value(c.channel, c.value, value_len(&c.kind))
+                .ok()?;
+            Some(ViaSetting {
+                control: c.clone(),
+                value,
+            })
+        })
+        .collect()
+}
+
+/// Each macro's steps. Text becomes the steps that type it; a macro the
+/// buffer holds badly reads as empty.
+fn read_macros(buffer: &[u8], count: u8) -> Vec<Vec<Step>> {
+    let mut out = Vec::new();
+    let mut rest = buffer;
+    for _ in 0..count {
+        let mut steps = Vec::new();
+        let mut text = String::new();
+        let mut ok = true;
+        for item in send_string::decode(rest) {
+            match item {
+                Ok(Item::Char(c)) => text.push(char::from(c)),
+                Ok(Item::Step(s)) => {
+                    flush(&mut text, &mut steps, &mut ok);
+                    steps.push(s);
+                }
+                Err(_) => ok = false,
+            }
+        }
+        flush(&mut text, &mut steps, &mut ok);
+        out.push(if ok { steps } else { Vec::new() });
+        let end = rest
+            .iter()
+            .position(|b| *b == 0)
+            .map_or(rest.len(), |i| i + 1);
+        rest = &rest[end..];
+    }
+    out
+}
+
+fn flush(text: &mut String, steps: &mut Vec<Step>, ok: &mut bool) {
+    if text.is_empty() {
+        return;
+    }
+    match lykil_config::text::steps(text) {
+        Ok(s) => steps.extend(s),
+        Err(_) => *ok = false,
+    }
+    text.clear();
+}
+
+/// Changed lighting channels and when, each saved once left alone.
+#[derive(Default)]
+struct Unsaved(BTreeMap<u8, Instant>);
+
+impl Unsaved {
+    fn changed(&mut self, channel: u8) {
+        self.0.insert(channel, Instant::now());
+    }
+
+    fn wait(&self) -> Duration {
+        if self.0.is_empty() {
+            RESCAN
+        } else {
+            SAVE_AFTER / 3
+        }
+    }
+
+    fn save_due(&mut self, device: &mut ViaDevice) -> Result<(), DeviceError> {
+        let due: Vec<u8> = self
+            .0
+            .iter()
+            .filter(|(_, at)| at.elapsed() >= SAVE_AFTER)
+            .map(|(ch, _)| *ch)
+            .collect();
+        for ch in due {
+            self.0.remove(&ch);
+            device.save_custom(ch)?;
+        }
+        Ok(())
+    }
+}
+
+/// Puts `steps` in macro `id` and writes the whole buffer.
+fn set_macro(
+    device: &mut ViaDevice,
+    macros: &mut [Vec<Step>],
+    id: u8,
+    steps: Vec<Step>,
+) -> Result<Option<String>, DeviceError> {
+    let Some(slot) = macros.get_mut(usize::from(id)) else {
+        return Ok(Some("no such macro".into()));
+    };
+    let before = std::mem::replace(slot, steps);
+    let written = match write_macros(macros) {
+        Some(bytes) => device.set_macro_buffer(&bytes).map(|()| None),
+        None => Ok(Some("the macro does not fit".to_string())),
+    };
+    if !matches!(written, Ok(None)) {
+        macros[usize::from(id)] = before;
+    }
+    written
+}
+
+/// The macro buffer for `macros`, each ended by `0`.
+fn write_macros(macros: &[Vec<Step>]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    for steps in macros {
+        let mut bytes = vec![0; steps.len() * 8 + 1];
+        let n = send_string::encode(steps, &mut bytes)?;
+        out.extend_from_slice(&bytes[..n]);
+        out.push(0);
+    }
+    Some(out)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Via {
@@ -109,6 +257,32 @@ fn bindings(codes: &[Vec<u16>], def: &ViaDefinition, abi: AbiVersion) -> Vec<Vec
         .collect()
 }
 
+/// The keyboard's definition, once one is in the folder.
+fn definition(
+    device: &mut ViaDevice,
+    via: Option<Via>,
+    rx: &Receiver<Command>,
+    shared: &Arc<Mutex<Shared>>,
+    canvas: CanvasId,
+) -> Result<ViaDefinition, DeviceError> {
+    loop {
+        if let Some(def) = find(device.ids(), device.name()) {
+            return Ok(def);
+        }
+        update(shared, canvas, |k| {
+            *k = Keyboard {
+                connection: Connection::NeedsDefinition,
+                name: device.name().to_string(),
+                via,
+                ..Keyboard::default()
+            };
+        });
+        thread::sleep(RESCAN);
+        device.uptime_ms()?;
+        while rx.try_recv().is_ok() {}
+    }
+}
+
 pub fn poll(
     mut device: ViaDevice,
     rx: &Receiver<Command>,
@@ -120,23 +294,9 @@ pub fn poll(
         protocol: device.protocol(),
         ids,
     });
-    let def = loop {
-        if let Some(def) = find(ids, device.name()) {
-            break def;
-        }
-        update(shared, canvas, |k| {
-            *k = Keyboard {
-                connection: Connection::NeedsDefinition,
-                name: device.name().to_string(),
-                via,
-                ..Keyboard::default()
-            };
-        });
-        thread::sleep(RESCAN);
-        if let Err(e) = device.uptime_ms() {
-            return e.to_string();
-        }
-        while rx.try_recv().is_ok() {}
+    let def = match definition(&mut device, via, rx, shared, canvas) {
+        Ok(d) => d,
+        Err(e) => return e.to_string(),
     };
     let loaded = (|| -> Result<_, DeviceError> {
         let layers = device.layer_count()?;
@@ -148,21 +308,33 @@ pub fn poll(
         Ok(l) => l,
         Err(e) => return e.to_string(),
     };
+    // Keyboards without dynamic macros refuse these; that is no macros.
+    let mut macros = device
+        .macro_count()
+        .and_then(|n| Ok(read_macros(&device.macro_buffer()?, n)))
+        .unwrap_or_default();
+    let settings = read_settings(&mut device, &def);
     update(shared, canvas, |k| {
         *k = Keyboard {
             connection: Connection::Connected,
             name: def.name.clone(),
             description: Some(description(&def, layers)),
             keymap: bindings(&codes, &def, abi),
+            macros: macros.clone(),
+            via_settings: settings.clone(),
             via,
             ..Keyboard::default()
         };
     });
+    let mut unsaved = Unsaved::default();
     loop {
-        let command = match rx.recv_timeout(RESCAN) {
+        let command = match rx.recv_timeout(unsaved.wait()) {
             Ok(c) => c,
             Err(RecvTimeoutError::Timeout) => {
-                if let Err(e) = device.uptime_ms() {
+                if let Err(e) = unsaved
+                    .save_due(&mut device)
+                    .and_then(|()| device.uptime_ms())
+                {
                     return e.to_string();
                 }
                 continue;
@@ -178,8 +350,26 @@ pub fn poll(
                 binding,
             } => set(&mut device, &def, abi, (layer, key, binding)),
             Command::ResetKeymap => device.reset_keymap().map(|()| None),
+            Command::SetVia { setting, value } => {
+                let Some(c) = settings.get(setting).map(|s| &s.control) else {
+                    continue;
+                };
+                match device.set_custom_value(c.channel, c.value, &value) {
+                    Ok(()) => {
+                        unsaved.changed(c.channel);
+                        continue;
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            Command::SetMacro { id, steps } => {
+                let r = set_macro(&mut device, &mut macros, id, steps);
+                let m = macros.clone();
+                update(shared, canvas, |k| k.macros = m);
+                r
+            }
             _ => Ok(Some(
-                "VIA keyboards have no lighting or macros in Studio".to_string(),
+                "Lykil only: a VIA keyboard cannot do this".to_string(),
             )),
         };
         let refused = match result {
@@ -220,6 +410,20 @@ fn set(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macros_read_and_write() {
+        let hi = lykil_config::text::steps("Hi").unwrap();
+        let bytes = write_macros(&[hi.clone(), vec![Step::Delay(50)], Vec::new()]).unwrap();
+        let back = read_macros(&bytes, 4);
+        assert_eq!(back[0], hi);
+        assert_eq!(back[1], [Step::Delay(50)]);
+        assert!(back[2].is_empty() && back[3].is_empty());
+        // Text as VIA's own editor writes it.
+        let typed = read_macros(b"ok\0", 1);
+        assert_eq!(typed[0], lykil_config::text::steps("ok").unwrap());
+        assert!(read_macros(b"\x01\x09\0", 1)[0].is_empty());
+    }
 
     #[test]
     fn keycodes_become_bindings_by_key() {

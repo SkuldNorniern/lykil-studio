@@ -39,6 +39,9 @@ pub struct Keyboard {
     /// While searching: raw HID interfaces that are there but did not
     /// answer, and why.
     pub seen: Vec<String>,
+    /// A VIA keyboard's settings from its definition's menus, with what
+    /// they are set to.
+    pub via_settings: Vec<crate::via::ViaSetting>,
 }
 
 impl Keyboard {
@@ -84,6 +87,11 @@ pub enum Command {
     SetMacro {
         id: u8,
         steps: Vec<Step>,
+    },
+    /// A VIA setting, by its place in [`Keyboard::via_settings`].
+    SetVia {
+        setting: usize,
+        value: Vec<u8>,
     },
 }
 
@@ -267,6 +275,8 @@ fn commands(
                     }
                 });
             }),
+            // Only VIA keyboards have these.
+            Command::SetVia { .. } => Ok(()),
             Command::ResetKeymap => device.reset_keymap().and_then(|()| {
                 let keymap = (0..device.hello().layers)
                     .map(|l| device.layer(l))
